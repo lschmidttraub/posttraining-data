@@ -18,7 +18,6 @@ from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any, Optional, List
 from datasets import load_from_disk, Dataset, DatasetDict
-from tqdm import tqdm
 
 
 def create_schema_compliant_part(part_type: str, content: str = "", metadata: Optional[Dict] = None, 
