@@ -3,10 +3,12 @@ import sys
 import json
 import random
 import argparse
+import tempfile
+import subprocess
+from pathlib import Path
 from subprocess import run
 from datetime import datetime, UTC
 from typing import Dict, Any, Optional
-from pathlib import Path
 from datasets import Dataset, DatasetDict, load_dataset, concatenate_datasets
 
 SRC = "newfacade/LeetCodeDataset"
@@ -21,7 +23,42 @@ def lint_code(code: str) -> Optional[str]:
         return None
     return f"```python\n{result.stdout.decode()}```"
 
-def convert_sample(sample: Dict[str, Any]) -> Dict[str, Any]:
+
+def generate_llvm_ir(sample: Dict[str, Any]) -> Optional[str]:
+    """Generate LLVM IR from the sample's completion and test code using codon."""
+    code = "from collections import *\n"
+    code += "from itertools import *\n"
+    code += "from functools import *\n"
+    code += "import heapq\n"
+    code += "from heapq import *\n"
+    code += "import math\n"
+    code += "from math import *\n"
+    code += sample["completion"]
+    code += "\n"
+    code += sample["test"]
+    code += "\n"
+    code += f"def main():\n    check({sample['entry_point']})\n    print('ok!')\nif __name__ == '__main__':\n    main()\n"
+
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".ll", delete=False) as tmp:
+            tmp_path = tmp.name
+        subprocess.run(
+            ["codon", "build", "-release", "-llvm", "-o", tmp_path],
+            input=code.encode("UTF-8"),
+            check=True,
+            capture_output=True,
+        )
+        with open(tmp_path, "r", encoding="UTF-8") as ftmp:
+            result = ftmp.read()
+        os.unlink(tmp_path)
+        return result
+    except subprocess.CalledProcessError:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+        return None
+
+
+def convert_sample(sample: Dict[str, Any], generate_ir: bool = False) -> Dict[str, Any]:
     """Convert a single sample to the new format."""
     
     # Start with existing fields
@@ -75,6 +112,12 @@ def convert_sample(sample: Dict[str, Any]) -> Dict[str, Any]:
         
         response = "".join(processed_parts)
 
+    # Generate LLVM IR if requested and append to response
+    if generate_ir:
+        llvm_ir = generate_llvm_ir(sample)
+        if llvm_ir is not None:
+            response += f"\n\nLLVM IR:\n\n```llvm\n{llvm_ir}```"
+
     parts: list[Dict] = [
         {
             "type": "response",
@@ -88,8 +131,8 @@ def convert_sample(sample: Dict[str, Any]) -> Dict[str, Any]:
     #         "type": "verifiable-responses",
     #         "answers": [],
     #     })
-    
-    # Process conversation branches    
+
+    # Process conversation branches
     converted["conversation_branches"] = [
         {
             "messages": [
@@ -100,7 +143,7 @@ def convert_sample(sample: Dict[str, Any]) -> Dict[str, Any]:
             ],
         },
     ]
-    
+
     return converted
 
 def load_existing_metadata(output_path: Path) -> Optional[Dict[str, Any]]:
@@ -134,6 +177,7 @@ def save_dataset_and_metadata(dataset_dict: DatasetDict, output_path: Path, args
         "output_path": str(output_path),
         "num_processes": args.num_proc,
         "limit": args.limit,
+        "ir_percentage": args.ir_percentage,
         "description": f"Converted {SRC} dataset from JSON to unified chat format"
     }
     
@@ -168,6 +212,7 @@ def cli():
     p.add_argument("-o", "--output", required=True, help="Output directory path")
     p.add_argument("--num-proc", type=int, default=8, help="Number of processes for dataset operations")
     p.add_argument("--limit", type=int, default=None, help="Limit number of samples to process")
+    p.add_argument("--ir-percentage", type=float, default=0.0, help="Percentage of samples to generate LLVM IR for (0.0-1.0, default: 0.0)")
     return p.parse_args()
 
 def main():
@@ -240,11 +285,11 @@ def main():
     # exit()
 
     # Merge the manual fixes
-    files = os.listdir("leetcode_fix")
+    files = os.listdir("/capstor/store/cscs/swissai/infra01/reasoning/dev/posttraining-data/leetcode_fix")
     question_ids = set([int(f.split(".")[0]) for f in files])
     for x in data:
         if x["question_id"] in question_ids:
-            with open(f"leetcode_fix/{x['question_id']}.txt", "r") as f:
+            with open(f"/capstor/store/cscs/swissai/infra01/reasoning/dev/posttraining-data/leetcode_fix/{x['question_id']}.txt", "r") as f:
                 text = f.read()
                 problem_description, response = text.split("\n\n<SEPARATOR>\n\n")
                 x["problem_description"] = problem_description
@@ -257,18 +302,23 @@ def main():
     
     # Convert samples
     print("Converting samples to new format...")
-    converted_samples = []
-    for i, sample in enumerate(data):
-        if i % 1000 == 0:
-            print(f"Processing sample {i}/{len(data)}")
-        converted_samples.append(convert_sample(sample))
-    
-    # Create Dataset and DatasetDict
-    print("Creating DatasetDict...")    
-    dataset = Dataset.from_list(converted_samples)
-    dataset_dict = DatasetDict({"train": dataset})
-    
-    print(f"Converted {len(converted_samples)} samples")
+    if args.ir_percentage > 0:
+        print(f"Generating LLVM IR for {args.ir_percentage * 100:.1f}% of samples")
+
+    def map_convert_sample(sample: Dict[str, Any]) -> Dict[str, Any]:
+        generate_ir = random.random() < args.ir_percentage
+        return convert_sample(sample, generate_ir=generate_ir)
+
+    converted_data = data.map(
+        map_convert_sample,
+        num_proc=args.num_proc,
+        remove_columns=data.column_names,
+        desc="Converting",
+    )
+
+    dataset_dict = DatasetDict({"train": converted_data})
+
+    print(f"Converted {len(converted_data)} samples")
     
     # Save dataset and metadata
     save_dataset_and_metadata(dataset_dict, output_path, args)

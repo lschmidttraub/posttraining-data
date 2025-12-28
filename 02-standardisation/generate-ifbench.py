@@ -1,17 +1,15 @@
 import sys
 import uuid
 import json
-import time
 import random
 import asyncio
 import argparse
 from typing import Any
-from pathlib import Path
 from datetime import datetime, timezone
 from dataclasses import dataclass, field
 
-import aiohttp
 import requests
+from openai import AsyncOpenAI
 from tqdm.asyncio import tqdm_asyncio
 from transformers import AutoTokenizer
 from datasets import Dataset, DatasetDict, load_from_disk
@@ -87,30 +85,42 @@ class AsyncSGLangClient:
         self,
         selection_url: str,
         generation_url: str,
+        selection_model: str,
+        generation_model: str,
         semaphore: asyncio.Semaphore,
-        selection_tokenizer: AutoTokenizer,
-        generation_tokenizer: AutoTokenizer,
         timeout: int = 180,
         max_response_tokens: int = 2048,
         reasoning_parser: str | None = "deepseek-r1",
     ):
         self.selection_url = selection_url.rstrip("/")
         self.generation_url = generation_url.rstrip("/")
+        self.selection_model = selection_model
+        self.generation_model = generation_model
         self.semaphore = semaphore
-        self.selection_tokenizer = selection_tokenizer
-        self.generation_tokenizer = generation_tokenizer
-        self.timeout = aiohttp.ClientTimeout(total=timeout)
+        self.timeout = timeout
         self.max_response_tokens = max_response_tokens
         self.reasoning_parser = reasoning_parser
-        self._session: aiohttp.ClientSession | None = None
+        self.selection_client: AsyncOpenAI | None = None
+        self.generation_client: AsyncOpenAI | None = None
 
     async def __aenter__(self) -> "AsyncSGLangClient":
-        self._session = aiohttp.ClientSession(timeout=self.timeout)
+        self.selection_client = AsyncOpenAI(
+            base_url=f"{self.selection_url}/v1",
+            api_key="EMPTY",
+            timeout=self.timeout,
+        )
+        self.generation_client = AsyncOpenAI(
+            base_url=f"{self.generation_url}/v1",
+            api_key="EMPTY",
+            timeout=self.timeout,
+        )
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
-        if self._session:
-            await self._session.close()
+        if self.selection_client:
+            await self.selection_client.close()
+        if self.generation_client:
+            await self.generation_client.close()
 
     async def select_best_group(
         self,
@@ -120,36 +130,31 @@ class AsyncSGLangClient:
         temperature: float = 0.0,
     ) -> tuple[int, int]:
         global current_requests
-        selection_prompt = self._build_selection_prompt(prompt, groups)
+        selection_messages = self._build_selection_prompt(prompt, groups)
 
         async with self.semaphore:
             current_requests += 1
             try:
-                async with self._session.post(
-                    f"{self.selection_url}/generate",
-                    json={
-                        "text": selection_prompt,
-                        "sampling_params": {
-                            "max_new_tokens": max_new_tokens,
-                            "temperature": temperature,
-                            "regex": r"-1|[0-4]",
-                        },
-                    },
-                ) as response:
-                    response.raise_for_status()
-                    result = await response.json()
-
-                    text = result["text"].strip()
-                    completion_tokens = result["meta_info"]["completion_tokens"]
-                    try:
-                        selection = int(text)
-                        if selection < -1 or selection > 4:
-                            return (-1, completion_tokens)
-                        return (selection, completion_tokens)
-                    except ValueError:
+                response = await self.selection_client.chat.completions.create(
+                    model=self.selection_model,
+                    messages=selection_messages,
+                    max_tokens=max_new_tokens,
+                    temperature=temperature,
+                    extra_body={"regex": r"-1|[0-4]"},
+                )
+                
+                text = response.choices[0].message.content.strip()
+                completion_tokens = response.usage.completion_tokens
+                
+                try:
+                    selection = int(text)
+                    if selection < -1 or selection > 4:
                         return (-1, completion_tokens)
+                    return (selection, completion_tokens)
+                except ValueError:
+                    return (-1, completion_tokens)
 
-            except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+            except Exception as e:
                 print(f"SGLang selection request failed: {e}")
                 return (-1, 0)
             finally:
@@ -163,60 +168,46 @@ class AsyncSGLangClient:
         temperature: float = 0.7,
     ) -> tuple[str | None, int]:
         global current_requests
-        generation_prompt = self._build_generation_prompt(
+        generation_messages = self._build_generation_prompt(
             augmented_prompt, original_response, instruction_descriptions
         )
 
         async with self.semaphore:
             current_requests += 1
             try:
-                async with self._session.post(
-                    f"{self.generation_url}/generate",
-                    json={
-                        "text": generation_prompt,
-                        "sampling_params": {
-                            "max_new_tokens": self.max_response_tokens,
-                            "temperature": temperature,
-                            "skip_special_tokens": False,
-                        },
-                    },
-                ) as response:
-                    response.raise_for_status()
-                    result = await response.json()
+                response = await self.generation_client.chat.completions.create(
+                    model=self.generation_model,
+                    messages=generation_messages,
+                    max_tokens=self.max_response_tokens,
+                    temperature=temperature,
+                    extra_body={"separate_reasoning": self.reasoning_parser != "apriel"}
+                )
 
-                    raw_text = result["text"].strip() if result else None
-                    completion_tokens = result["meta_info"]["completion_tokens"]
-            except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                if response.choices[0].message.content is None:
+                    return (None, 0)
+
+                # The reasoning content is available in reasoning_content if separate_reasoning=True
+                # and content contains the clean response.
+                clean_text = response.choices[0].message.content.strip()
+
+                if self.reasoning_parser == "apriel":
+                    if "[BEGIN FINAL RESPONSE]" in clean_text:
+                        clean_text = clean_text.split("[BEGIN FINAL RESPONSE]")[-1].strip()
+                    if "<|end|>" in clean_text:
+                        clean_text = clean_text.split("<|end|>")[0].strip()
+                
+                completion_tokens = response.usage.completion_tokens
+                return (clean_text, completion_tokens)
+                
+            except Exception as e:
                 print(f"SGLang generation request failed: {e}")
                 return (None, 0)
             finally:
                 current_requests -= 1
 
-        if raw_text is None or self.reasoning_parser is None:
-            return (raw_text, completion_tokens)
-
-        if self.reasoning_parser == "apriel":
-            clean_text = raw_text.split("</thinking>")[-1].split("<|end|>")[0].strip()
-            return (clean_text, completion_tokens)
-
-        # Use the native reasoning parser to strip reasoning traces.
-        parse_url = f"{self.generation_url}/separate_reasoning"
-        parse_payload = {"text": raw_text, "reasoning_parser": self.reasoning_parser}
-        clean_text = raw_text
-
-        try:
-            async with self._session.post(parse_url, json=parse_payload) as parse_resp:
-                parse_resp.raise_for_status()
-                parsed = await parse_resp.json()
-                clean_text = (parsed.get("text") or raw_text).strip()
-        except (aiohttp.ClientError, asyncio.TimeoutError, KeyError) as e:
-            print(f"SGLang reasoning separation failed; using raw response: {e}")
-
-        return (clean_text, completion_tokens)
-
     def _build_selection_prompt(
         self, prompt: str, groups: list[InstructionGroup]
-    ) -> str:
+    ) -> list[dict[str, str]]:
         groups_text = ""
         for i, group in enumerate(groups):
             instructions_text = "\n".join(f"  - {desc}" for desc in group.descriptions)
@@ -234,20 +225,14 @@ If none of the groups are suitable (e.g., instructions conflict with the prompt'
 
 Your selection (output only the number):"""
 
-        messages = [{"role": "user", "content": user_message}]
-        formatted_prompt = self.selection_tokenizer.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=True,
-        )
-        return formatted_prompt
+        return [{"role": "user", "content": user_message}]
 
     def _build_generation_prompt(
         self,
         augmented_prompt: str,
         original_response: str | None,
         instruction_descriptions: list[str],
-    ) -> str:
+    ) -> list[dict[str, str]]:
         instructions_list = "\n".join(f"- {desc}" for desc in instruction_descriptions)
 
         if original_response:
@@ -272,13 +257,7 @@ You MUST follow these instructions in your response:
 
 Provide your response:"""
 
-        messages = [{"role": "user", "content": user_message}]
-        formatted_prompt = self.generation_tokenizer.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=True,
-        )
-        return formatted_prompt
+        return [{"role": "user", "content": user_message}]
 
 
 class MultiAsyncSGLangClient:
@@ -424,12 +403,38 @@ def sample_multiple_groups(
     return groups
 
 
-async def augment_single_turn_instruction(
-    sample: dict[str, Any],
+@dataclass
+class AugmentationTask:
+    sample: dict[str, Any]
+    aug_type: str
+
+
+@dataclass
+class SelectionContext:
+    """Context needed to perform generation after selection."""
+    task: AugmentationTask
+    selected_group: InstructionGroup
+    augmented_prompt: str
+    original_response: str | None
+    num_instructions: int
+    # For multi-turn, we need additional context
+    multi_turn_data: dict[str, Any] | None = None
+
+
+@dataclass
+class AugmentationResult:
+    aug_type: str
+    result: dict[str, Any] | None
+    success: bool
+
+
+async def do_selection_single_turn_instruction(
+    task: AugmentationTask,
     sglang_client: AsyncSGLangClient | MultiAsyncSGLangClient,
-    max_retries: int = 3,
-    max_generation_retries: int = 3,
-) -> dict[str, Any] | None:
+    max_retries: int,
+) -> SelectionContext | None:
+    """Perform selection phase for single_turn_instruction."""
+    sample = task.sample
     initial_prompt = sample.get("initial_prompt", {})
     if isinstance(initial_prompt, str):
         prompt = initial_prompt
@@ -457,14 +462,12 @@ async def augment_single_turn_instruction(
     num_instructions = random.randint(1, 5)
 
     selected_group = None
-    total_selection_tokens = 0
     for _ in range(max_retries):
         groups = sample_multiple_groups(prompt, num_instructions, num_groups=5)
         if len(groups) == 0:
             continue
 
-        selection, tokens = await sglang_client.select_best_group(prompt, groups)
-        total_selection_tokens += tokens
+        selection, _ = await sglang_client.select_best_group(prompt, groups)
 
         if selection >= 0 and selection < len(groups):
             selected_group = groups[selection]
@@ -474,20 +477,54 @@ async def augment_single_turn_instruction(
         return None
 
     instruction_descriptions = " ".join(selected_group.descriptions)
-    augmented_prompt = f"{prompt} {instruction_descriptions}"
+
+    if random.random() < 0.1:
+        descriptions = selected_group.descriptions
+        mid_point = len(descriptions) // 2
+        first_half = " ".join(descriptions[:mid_point])
+        second_half = " ".join(descriptions[mid_point:])
+        
+        if first_half and second_half:
+            augmented_prompt = f"{first_half} {prompt} {second_half}"
+        elif first_half:
+            augmented_prompt = f"{first_half} {prompt}"
+        elif second_half:
+            augmented_prompt = f"{prompt} {second_half}"
+        else:
+            augmented_prompt = f"{prompt}"
+    elif random.random() < 0.55:
+        augmented_prompt = f"{prompt} {instruction_descriptions}"
+    else:
+        augmented_prompt = f"{instruction_descriptions} {prompt}"
+
+    return SelectionContext(
+        task=task,
+        selected_group=selected_group,
+        augmented_prompt=augmented_prompt,
+        original_response=original_response,
+        num_instructions=num_instructions,
+    )
+
+
+async def do_generation_single_turn_instruction(
+    ctx: SelectionContext,
+    sglang_client: AsyncSGLangClient | MultiAsyncSGLangClient,
+    max_generation_retries: int,
+) -> dict[str, Any] | None:
+    """Perform generation phase for single_turn_instruction."""
+    sample = ctx.task.sample
+    selected_group = ctx.selected_group
 
     generated_response = None
     verification_results = None
     all_passed = False
-    total_generation_tokens = 0
 
     for _ in range(max_generation_retries):
-        response_text, tokens = await sglang_client.generate_response(
-            augmented_prompt=augmented_prompt,
-            original_response=original_response,
+        response_text, _ = await sglang_client.generate_response(
+            augmented_prompt=ctx.augmented_prompt,
+            original_response=ctx.original_response,
             instruction_descriptions=selected_group.descriptions,
         )
-        total_generation_tokens += tokens
 
         if response_text is None:
             continue
@@ -525,7 +562,7 @@ async def augment_single_turn_instruction(
         "system_prompt": sample.get("system_prompt", {"content": "", "metadata": {}}),
         "initial_prompt": {
             "role": "user",
-            "content": augmented_prompt,
+            "content": ctx.augmented_prompt,
             "metadata": {},
         },
         "available_functions": sample.get("available_functions", []),
@@ -548,7 +585,7 @@ async def augment_single_turn_instruction(
             }
         ],
         "ground_truth": json.dumps(ground_truth),
-        "num_instructions": num_instructions,
+        "num_instructions": ctx.num_instructions,
         "verification_passed": all_passed,
         "verification_results": json.dumps(verification_results)
         if verification_results
@@ -559,12 +596,13 @@ async def augment_single_turn_instruction(
     return augmented_sample
 
 
-async def augment_single_turn_refinement(
-    sample: dict[str, Any],
+async def do_selection_single_turn_refinement(
+    task: AugmentationTask,
     sglang_client: AsyncSGLangClient | MultiAsyncSGLangClient,
-    max_retries: int = 3,
-    max_generation_retries: int = 3,
-) -> dict[str, Any] | None:
+    max_retries: int,
+) -> SelectionContext | None:
+    """Perform selection phase for single_turn_refinement."""
+    sample = task.sample
     initial_prompt = sample.get("initial_prompt", {})
     if isinstance(initial_prompt, str):
         prompt = initial_prompt
@@ -600,14 +638,12 @@ async def augment_single_turn_refinement(
     num_instructions = random.randint(1, 3)
 
     selected_group = None
-    total_selection_tokens = 0
     for _ in range(max_retries):
         groups = sample_multiple_groups(prompt, num_instructions, num_groups=5)
         if len(groups) == 0:
             continue
 
-        selection, tokens = await sglang_client.select_best_group(prompt, groups)
-        total_selection_tokens += tokens
+        selection, _ = await sglang_client.select_best_group(prompt, groups)
 
         if selection >= 0 and selection < len(groups):
             selected_group = groups[selection]
@@ -679,18 +715,37 @@ async def augment_single_turn_refinement(
     selected_template = random.choice(refinement_prompt_templates)
     refinement_prompt = f"{selected_template} {instruction_descriptions}"
 
+    return SelectionContext(
+        task=task,
+        selected_group=selected_group,
+        augmented_prompt=refinement_prompt,
+        original_response=assistant_response,
+        num_instructions=num_instructions,
+        multi_turn_data={"original_prompt": prompt},
+    )
+
+
+async def do_generation_single_turn_refinement(
+    ctx: SelectionContext,
+    sglang_client: AsyncSGLangClient | MultiAsyncSGLangClient,
+    max_generation_retries: int,
+) -> dict[str, Any] | None:
+    """Perform generation phase for single_turn_refinement."""
+    sample = ctx.task.sample
+    selected_group = ctx.selected_group
+    original_prompt = ctx.multi_turn_data["original_prompt"]
+    assistant_response = ctx.original_response
+
     generated_response = None
     verification_results = None
     all_passed = False
-    total_generation_tokens = 0
 
     for _ in range(max_generation_retries):
-        response_text, tokens = await sglang_client.generate_response(
-            augmented_prompt=refinement_prompt,
+        response_text, _ = await sglang_client.generate_response(
+            augmented_prompt=ctx.augmented_prompt,
             original_response=assistant_response,
             instruction_descriptions=selected_group.descriptions,
         )
-        total_generation_tokens += tokens
 
         if response_text is None:
             continue
@@ -728,7 +783,7 @@ async def augment_single_turn_refinement(
         "system_prompt": sample.get("system_prompt", {"content": "", "metadata": {}}),
         "initial_prompt": {
             "role": "user",
-            "content": prompt,
+            "content": original_prompt,
             "metadata": {},
         },
         "available_functions": sample.get("available_functions", []),
@@ -752,7 +807,7 @@ async def augment_single_turn_refinement(
                         "parts": [
                             {
                                 "type": "response",
-                                "content": refinement_prompt,
+                                "content": ctx.augmented_prompt,
                                 "metadata": {},
                                 "name": "",
                                 "args": "",
@@ -775,7 +830,7 @@ async def augment_single_turn_refinement(
             }
         ],
         "ground_truth": json.dumps(ground_truth),
-        "num_instructions": num_instructions,
+        "num_instructions": ctx.num_instructions,
         "verification_passed": all_passed,
         "verification_results": json.dumps(verification_results)
         if verification_results
@@ -786,12 +841,13 @@ async def augment_single_turn_refinement(
     return augmented_sample
 
 
-async def augment_multi_turn_instruction(
-    sample: dict[str, Any],
+async def do_selection_multi_turn_instruction(
+    task: AugmentationTask,
     sglang_client: AsyncSGLangClient | MultiAsyncSGLangClient,
-    max_retries: int = 3,
-    max_generation_retries: int = 3,
-) -> dict[str, Any] | None:
+    max_retries: int,
+) -> SelectionContext | None:
+    """Perform selection phase for multi_turn_instruction (all turns)."""
+    sample = task.sample
     branches = sample.get("conversation_branches", [])
     if not branches or len(branches) == 0:
         return None
@@ -827,115 +883,40 @@ async def augment_multi_turn_instruction(
             if original_first_response:
                 break
 
-    all_ground_truths = []
-    all_verification_results = []
-    augmented_messages = []
-    initial_group = None
+    # Collect all selection results for all turns
+    turn_selections = []
+    augmented_initial = initial_content
 
-    total_selection_time = 0.0
-    total_generation_time = 0.0
-    total_selection_attempts = 0
-    total_generation_attempts = 0
-    total_selection_tokens = 0
-    total_generation_tokens = 0
-
+    # Selection for initial turn
     if initial_content:
         num_instructions = random.randint(1, 3)
         selected_group = None
 
-        # Track selection timing for initial turn
-        selection_start = time.time()
-        for attempt in range(max_retries):
-            groups = sample_multiple_groups(
-                initial_content, num_instructions, num_groups=5
-            )
+        for _ in range(max_retries):
+            groups = sample_multiple_groups(initial_content, num_instructions, num_groups=5)
             if len(groups) == 0:
                 continue
-            total_selection_attempts += 1
-            selection, tokens = await sglang_client.select_best_group(
-                initial_content, groups
-            )
-            total_selection_tokens += tokens
+            selection, _ = await sglang_client.select_best_group(initial_content, groups)
             if selection >= 0 and selection < len(groups):
                 selected_group = groups[selection]
                 break
-        total_selection_time += time.time() - selection_start
 
         if selected_group is None:
             return None
 
-        initial_group = selected_group
         instruction_descriptions = " ".join(selected_group.descriptions)
         augmented_initial = f"{initial_content} {instruction_descriptions}"
 
-        # Track generation timing for initial turn
-        generation_start = time.time()
-        generated_response = None
-        verification_results = None
-        all_passed = False
+        turn_selections.append({
+            "turn": 0,
+            "selected_group": selected_group,
+            "augmented_content": augmented_initial,
+            "original_response": original_first_response,
+            "num_instructions": num_instructions,
+        })
 
-        for gen_attempt in range(max_generation_retries):
-            total_generation_attempts += 1
-            response_text, tokens = await sglang_client.generate_response(
-                augmented_prompt=augmented_initial,
-                original_response=original_first_response,
-                instruction_descriptions=selected_group.descriptions,
-            )
-            total_generation_tokens += tokens
-
-            if response_text is None:
-                continue
-
-            generated_response = response_text
-            all_passed, verification_results = selected_group.verify_response(
-                generated_response
-            )
-
-            if all_passed:
-                break
-        total_generation_time += time.time() - generation_start
-
-        if generated_response is None:
-            return None
-
-        augmented_messages.append(
-            {
-                "role": "assistant",
-                "parts": [
-                    {
-                        "type": "response",
-                        "content": generated_response,
-                        "metadata": {},
-                        "name": "",
-                        "args": "",
-                    }
-                ],
-            }
-        )
-
-        all_ground_truths.append(
-            {
-                "turn": 0,
-                "instruction_id": selected_group.instruction_ids,
-                "kwargs": selected_group.all_kwargs,
-            }
-        )
-
-        all_verification_results.append(
-            {
-                "turn": 0,
-                "passed": all_passed,
-                "details": verification_results,
-            }
-        )
-    else:
-        augmented_initial = initial_content
-
+    # Selection for subsequent user turns
     turn_idx = 1
-    prev_assistant_response = (
-        augmented_messages[0]["parts"][0]["content"] if augmented_messages else None
-    )
-
     for i, msg in enumerate(messages):
         if msg.get("role") == "user":
             parts = msg.get("parts", [])
@@ -949,116 +930,204 @@ async def augment_multi_turn_instruction(
                 num_instructions = random.randint(1, 3)
                 selected_group = None
 
-                # Track selection timing for this turn
-                selection_start = time.time()
-                for attempt in range(max_retries):
-                    groups = sample_multiple_groups(
-                        user_content, num_instructions, num_groups=5
-                    )
+                for _ in range(max_retries):
+                    groups = sample_multiple_groups(user_content, num_instructions, num_groups=5)
                     if len(groups) == 0:
                         continue
-                    total_selection_attempts += 1
-                    selection, tokens = await sglang_client.select_best_group(
-                        user_content, groups
-                    )
-                    total_selection_tokens += tokens
+                    selection, _ = await sglang_client.select_best_group(user_content, groups)
                     if selection >= 0 and selection < len(groups):
                         selected_group = groups[selection]
                         break
-                total_selection_time += time.time() - selection_start
 
-                if selected_group is None:
-                    augmented_messages.append(msg)
-                else:
+                # Find original response for this turn
+                original_response_for_turn = None
+                for j in range(i + 1, len(messages)):
+                    if messages[j].get("role") == "assistant":
+                        parts_j = messages[j].get("parts", [])
+                        for part in parts_j:
+                            if part.get("type") == "response":
+                                original_response_for_turn = part.get("content", "")
+                                break
+                        break
+
+                if selected_group is not None:
                     instruction_descriptions = " ".join(selected_group.descriptions)
                     augmented_content = f"{user_content} {instruction_descriptions}"
+                    turn_selections.append({
+                        "turn": turn_idx,
+                        "selected_group": selected_group,
+                        "augmented_content": augmented_content,
+                        "original_response": original_response_for_turn,
+                        "original_user_content": user_content,
+                        "num_instructions": num_instructions,
+                        "original_msg": msg,
+                        "msg_index": i,
+                    })
+                else:
+                    # No selection, keep original message
+                    turn_selections.append({
+                        "turn": turn_idx,
+                        "selected_group": None,
+                        "original_msg": msg,
+                        "msg_index": i,
+                    })
 
-                    augmented_messages.append(
-                        {
-                            "role": "user",
-                            "parts": [
-                                {
-                                    "type": "response",
-                                    "content": augmented_content,
-                                    "metadata": {},
-                                    "name": "",
-                                    "args": "",
-                                }
-                            ],
-                        }
-                    )
-
-                    original_response_for_turn = None
-                    for j in range(i + 1, len(messages)):
-                        if messages[j].get("role") == "assistant":
-                            parts = messages[j].get("parts", [])
-                            for part in parts:
-                                if part.get("type") == "response":
-                                    original_response_for_turn = part.get("content", "")
-                                    break
-                            break
-
-                    # Track generation timing for this turn
-                    generation_start = time.time()
-                    generated_response = None
-                    verification_results = None
-                    all_passed = False
-
-                    for gen_attempt in range(max_generation_retries):
-                        total_generation_attempts += 1
-                        response_text, tokens = await sglang_client.generate_response(
-                            augmented_prompt=augmented_content,
-                            original_response=original_response_for_turn,
-                            instruction_descriptions=selected_group.descriptions,
-                        )
-                        total_generation_tokens += tokens
-
-                        if response_text is None:
-                            continue
-
-                        generated_response = response_text
-                        all_passed, verification_results = (
-                            selected_group.verify_response(generated_response)
-                        )
-
-                        if all_passed:
-                            break
-                    total_generation_time += time.time() - generation_start
-
-                    if generated_response:
-                        augmented_messages.append(
-                            {
-                                "role": "assistant",
-                                "parts": [
-                                    {
-                                        "type": "response",
-                                        "content": generated_response,
-                                        "metadata": {},
-                                        "name": "",
-                                        "args": "",
-                                    }
-                                ],
-                            }
-                        )
-
-                        all_verification_results.append(
-                            {
-                                "turn": turn_idx,
-                                "passed": all_passed,
-                                "details": verification_results,
-                            }
-                        )
-
-                    all_ground_truths.append(
-                        {
-                            "turn": turn_idx,
-                            "instruction_id": selected_group.instruction_ids,
-                            "kwargs": selected_group.all_kwargs,
-                        }
-                    )
-            else:
-                augmented_messages.append(msg)
             turn_idx += 1
+
+    # Check if we have at least one successful selection
+    has_selection = any(ts.get("selected_group") is not None for ts in turn_selections)
+    if not has_selection:
+        return None
+
+    return SelectionContext(
+        task=task,
+        selected_group=turn_selections[0].get("selected_group") if turn_selections else None,
+        augmented_prompt=augmented_initial,
+        original_response=original_first_response,
+        num_instructions=sum(ts.get("num_instructions", 0) for ts in turn_selections if ts.get("selected_group")),
+        multi_turn_data={
+            "turn_selections": turn_selections,
+            "messages": messages,
+            "initial_content": initial_content,
+        },
+    )
+
+
+async def do_generation_multi_turn_instruction(
+    ctx: SelectionContext,
+    sglang_client: AsyncSGLangClient | MultiAsyncSGLangClient,
+    max_generation_retries: int,
+) -> dict[str, Any] | None:
+    """Perform generation phase for multi_turn_instruction (all turns)."""
+    sample = ctx.task.sample
+    turn_selections = ctx.multi_turn_data["turn_selections"]
+    messages = ctx.multi_turn_data["messages"]
+    initial_content = ctx.multi_turn_data["initial_content"]
+
+    all_ground_truths = []
+    all_verification_results = []
+    augmented_messages = []
+
+    # Process initial turn generation
+    augmented_initial = initial_content
+    for ts in turn_selections:
+        if ts["turn"] == 0 and ts.get("selected_group") is not None:
+            selected_group = ts["selected_group"]
+            augmented_initial = ts["augmented_content"]
+
+            generated_response = None
+            verification_results = None
+            all_passed = False
+
+            for _ in range(max_generation_retries):
+                response_text, _ = await sglang_client.generate_response(
+                    augmented_prompt=augmented_initial,
+                    original_response=ts["original_response"],
+                    instruction_descriptions=selected_group.descriptions,
+                )
+
+                if response_text is None:
+                    continue
+
+                generated_response = response_text
+                all_passed, verification_results = selected_group.verify_response(generated_response)
+
+                if all_passed:
+                    break
+
+            if generated_response is None:
+                return None
+
+            augmented_messages.append({
+                "role": "assistant",
+                "parts": [{
+                    "type": "response",
+                    "content": generated_response,
+                    "metadata": {},
+                    "name": "",
+                    "args": "",
+                }],
+            })
+
+            all_ground_truths.append({
+                "turn": 0,
+                "instruction_id": selected_group.instruction_ids,
+                "kwargs": selected_group.all_kwargs,
+            })
+
+            all_verification_results.append({
+                "turn": 0,
+                "passed": all_passed,
+                "details": verification_results,
+            })
+            break
+
+    # Process subsequent turns
+    for ts in turn_selections:
+        if ts["turn"] == 0:
+            continue
+
+        if ts.get("selected_group") is None:
+            # No selection, keep original message
+            augmented_messages.append(ts["original_msg"])
+        else:
+            selected_group = ts["selected_group"]
+            augmented_content = ts["augmented_content"]
+
+            augmented_messages.append({
+                "role": "user",
+                "parts": [{
+                    "type": "response",
+                    "content": augmented_content,
+                    "metadata": {},
+                    "name": "",
+                    "args": "",
+                }],
+            })
+
+            generated_response = None
+            verification_results = None
+            all_passed = False
+
+            for _ in range(max_generation_retries):
+                response_text, _ = await sglang_client.generate_response(
+                    augmented_prompt=augmented_content,
+                    original_response=ts.get("original_response"),
+                    instruction_descriptions=selected_group.descriptions,
+                )
+
+                if response_text is None:
+                    continue
+
+                generated_response = response_text
+                all_passed, verification_results = selected_group.verify_response(generated_response)
+
+                if all_passed:
+                    break
+
+            if generated_response:
+                augmented_messages.append({
+                    "role": "assistant",
+                    "parts": [{
+                        "type": "response",
+                        "content": generated_response,
+                        "metadata": {},
+                        "name": "",
+                        "args": "",
+                    }],
+                })
+
+                all_verification_results.append({
+                    "turn": ts["turn"],
+                    "passed": all_passed,
+                    "details": verification_results,
+                })
+
+            all_ground_truths.append({
+                "turn": ts["turn"],
+                "instruction_id": selected_group.instruction_ids,
+                "kwargs": selected_group.all_kwargs,
+            })
 
     if len(all_ground_truths) == 0:
         return None
@@ -1101,66 +1170,166 @@ async def augment_multi_turn_instruction(
     return augmented_sample
 
 
-@dataclass
-class AugmentationTask:
-    sample: dict[str, Any]
-    aug_type: str
+# Map augmentation types to their selection and generation functions
+SELECTION_FUNCS = {
+    "single_turn_instruction": do_selection_single_turn_instruction,
+    "single_turn_refinement": do_selection_single_turn_refinement,
+    "multi_turn_instruction": do_selection_multi_turn_instruction,
+}
+
+GENERATION_FUNCS = {
+    "single_turn_instruction": do_generation_single_turn_instruction,
+    "single_turn_refinement": do_generation_single_turn_refinement,
+    "multi_turn_instruction": do_generation_multi_turn_instruction,
+}
 
 
-@dataclass
-class AugmentationResult:
-    aug_type: str
-    result: dict[str, Any] | None
-    success: bool
-
-
-async def process_single_task(
+async def process_single_selection(
     task: AugmentationTask,
     sglang_client: AsyncSGLangClient | MultiAsyncSGLangClient,
-    augmentation_funcs: dict,
     max_retries: int,
+) -> SelectionContext | None:
+    """Run selection phase for a single task."""
+    selection_func = SELECTION_FUNCS.get(task.aug_type)
+    if selection_func is None:
+        return None
+
+    try:
+        return await selection_func(task, sglang_client, max_retries)
+    except Exception as e:
+        print(f"Error in selection for {task.aug_type}: {e}")
+        return None
+
+
+async def process_single_generation(
+    ctx: SelectionContext,
+    sglang_client: AsyncSGLangClient | MultiAsyncSGLangClient,
     max_generation_retries: int,
 ) -> AugmentationResult:
-    aug_func = augmentation_funcs.get(task.aug_type)
-    if aug_func is None:
+    """Run generation phase for a single selection context."""
+    generation_func = GENERATION_FUNCS.get(ctx.task.aug_type)
+    if generation_func is None:
         return AugmentationResult(
-            aug_type=task.aug_type,
+            aug_type=ctx.task.aug_type,
             result=None,
             success=False,
         )
 
     try:
-        result = await aug_func(
-            task.sample, sglang_client, max_retries, max_generation_retries
-        )
+        result = await generation_func(ctx, sglang_client, max_generation_retries)
+        # Success only if result exists AND all constraints passed verification
+        success = result is not None and result.get("verification_passed", False)
         return AugmentationResult(
-            aug_type=task.aug_type,
-            result=result,
-            success=result is not None,
+            aug_type=ctx.task.aug_type,
+            result=result if success else None,
+            success=success,
         )
     except Exception as e:
-        print(f"Error processing task: {e}")
+        print(f"Error in generation for {ctx.task.aug_type}: {e}")
+        return AugmentationResult(
+            aug_type=ctx.task.aug_type,
+            result=None,
+            success=False,
+        )
+
+
+async def process_single_task(
+    task: AugmentationTask,
+    sglang_client: AsyncSGLangClient | MultiAsyncSGLangClient,
+    max_retries: int,
+    max_generation_retries: int,
+) -> AugmentationResult:
+    """Process a single task: selection followed by generation."""
+    # Step 1: Selection
+    ctx = await process_single_selection(task, sglang_client, max_retries)
+    if ctx is None:
         return AugmentationResult(
             aug_type=task.aug_type,
             result=None,
             success=False,
         )
 
+    # Step 2: Generation
+    return await process_single_generation(ctx, sglang_client, max_generation_retries)
+
 
 async def process_batch(
     tasks: list[AugmentationTask],
     sglang_client: AsyncSGLangClient | MultiAsyncSGLangClient,
-    augmentation_funcs: dict,
     max_retries: int,
     max_generation_retries: int,
+    batch_num: int = 0,
+    total_successful: int = 0,
+    augmented_samples: list[dict[str, Any]] | None = None,
+    output_path: str | None = None,
+    save_interval: int = 0,
+    last_save_count_ref: list[int] | None = None,
 ) -> list[AugmentationResult]:
-    coroutines = [
-        process_single_task(
-            task, sglang_client, augmentation_funcs, max_retries, max_generation_retries
+    """Process a batch: each task does selection then generation sequentially."""
+    global current_requests
+
+    # Run all tasks in parallel (each task does selection + generation sequentially)
+    async_tasks = [
+        asyncio.create_task(
+            process_single_task(task, sglang_client, max_retries, max_generation_retries)
         )
         for task in tasks
     ]
-    return await asyncio.gather(*coroutines)
+
+    results: list[AugmentationResult] = [None] * len(tasks)
+    success_count = 0
+
+    with tqdm_asyncio(
+        total=len(tasks),
+        desc=f"Batch {batch_num} | total={total_successful}",
+        leave=False,
+    ) as pbar:
+        for i, future in enumerate(asyncio.as_completed(async_tasks)):
+            result = await future
+            # Find the index of this task
+            for j, task in enumerate(async_tasks):
+                if task.done() and results[j] is None:
+                    try:
+                        results[j] = task.result()
+                        if results[j].success:
+                            success_count += 1
+                            # Append to augmented_samples and check for save
+                            if augmented_samples is not None and results[j].result is not None:
+                                augmented_samples.append(results[j].result)
+                                if (
+                                    save_interval > 0
+                                    and output_path is not None
+                                    and last_save_count_ref is not None
+                                ):
+                                    new_samples_count = len(augmented_samples) - last_save_count_ref[0]
+                                    if new_samples_count >= save_interval:
+                                        print(
+                                            f"\nSaving checkpoint: {len(augmented_samples)} total samples..."
+                                        )
+                                        save_dataset(augmented_samples, output_path)
+                                        last_save_count_ref[0] = len(augmented_samples)
+                    except Exception:
+                        results[j] = AugmentationResult(
+                            aug_type=tasks[j].aug_type,
+                            result=None,
+                            success=False,
+                        )
+                    break
+            pbar.update(1)
+            pbar.set_description(
+                f"Batch {batch_num} | total={total_successful + success_count} | reqs={current_requests} | success={success_count}/{i+1}"
+            )
+
+    # Fill any remaining None values (shouldn't happen, but just in case)
+    for i, r in enumerate(results):
+        if r is None:
+            results[i] = AugmentationResult(
+                aug_type=tasks[i].aug_type,
+                result=None,
+                success=False,
+            )
+
+    return results
 
 
 def serialize_metadata(obj: Any) -> Any:
@@ -1283,9 +1452,9 @@ async def process_dataset_async(
             client = AsyncSGLangClient(
                 selection_urls[sel_idx],
                 generation_urls[gen_idx],
+                selection_model_paths[sel_idx],
+                generation_model_paths[gen_idx],
                 semaphore,
-                selection_tokenizers[sel_idx],
-                generation_tokenizers[gen_idx],
                 max_response_tokens=max_response_tokens,
                 reasoning_parser=reasoning_parser,
             )
@@ -1297,16 +1466,10 @@ async def process_dataset_async(
         f"Created {len(clients)} client(s) (cartesian selection x generation); requests will be randomly distributed across them."
     )
 
-    augmentation_funcs = {
-        "single_turn_instruction": augment_single_turn_instruction,
-        "single_turn_refinement": augment_single_turn_refinement,
-        "multi_turn_instruction": augment_multi_turn_instruction,
-    }
-
     def create_tasks_for_sample(sample: dict[str, Any]) -> list[AugmentationTask]:
         tasks = []
         for aug_type in augmentation_types:
-            if aug_type not in augmentation_funcs:
+            if aug_type not in SELECTION_FUNCS:
                 continue
 
             if aug_type == "multi_turn_instruction":
@@ -1326,23 +1489,11 @@ async def process_dataset_async(
     stats = {aug_type: {"success": 0, "failed": 0} for aug_type in augmentation_types}
     pass_num = 0
     sample_idx = 0
-    last_save_count = len(augmented_samples)
+    batch_num = 0
+    last_save_count_ref = [len(augmented_samples)]  # Mutable reference for save tracking
 
     async with multi_client as sglang_client:
         processed_count = 0  # Track tasks processed in this run
-        initial_successful = len(augmented_samples)  # Existing successful samples
-        if target_samples is not None:
-            pbar = tqdm_asyncio(
-                total=target_samples,
-                initial=initial_successful,
-                desc=f"reqs={current_requests} | Generating samples ({initial_successful} existing, {processed_count} processed)",
-            )
-        else:
-            pbar = tqdm_asyncio(
-                total=dataset_size * len(augmentation_types),
-                initial=0,
-                desc=f"reqs={current_requests} | Processing samples ({processed_count} processed)",
-            )
 
         while True:
             # Check if we've reached the target
@@ -1383,84 +1534,36 @@ async def process_dataset_async(
             if not tasks:
                 break
 
-            # Process tasks and update progress bar as each completes
-            task_futures = [
-                asyncio.create_task(
-                    process_single_task(
-                        task,
-                        sglang_client,
-                        augmentation_funcs,
-                        max_retries,
-                        max_generation_retries,
-                    )
-                )
-                for task in tasks
-            ]
+            # Process batch (selection + generation together for each task)
+            batch_num += 1
+            batch_results = await process_batch(
+                tasks=tasks,
+                sglang_client=sglang_client,
+                max_retries=max_retries,
+                max_generation_retries=max_generation_retries,
+                batch_num=batch_num,
+                total_successful=len(augmented_samples),
+                augmented_samples=augmented_samples,
+                output_path=output_path,
+                save_interval=save_interval,
+                last_save_count_ref=last_save_count_ref,
+            )
 
-            # Process results as they complete (not waiting for entire batch)
-            for future in asyncio.as_completed(task_futures):
-                try:
-                    result = await future
-                except asyncio.CancelledError:
-                    continue
-
-                if result.success and result.result is not None:
-                    # Check if we've already reached target
-                    if (
-                        target_samples is not None
-                        and len(augmented_samples) >= target_samples
-                    ):
-                        # Cancel remaining tasks
-                        for remaining_future in task_futures:
-                            if not remaining_future.done():
-                                remaining_future.cancel()
-                        break
-                    augmented_samples.append(result.result)
+            # Process results (samples already added in process_batch_two_waves)
+            for result in batch_results:
+                if result.success:
                     stats[result.aug_type]["success"] += 1
                     processed_count += 1
-                    pbar.update(1)
-                    current_successful = len(augmented_samples)
-                    pbar.set_description(
-                        f"reqs={current_requests} | Generating samples ({current_successful} successful, {processed_count} processed)"
-                        if target_samples is not None
-                        else f"reqs={current_requests} | Processing samples ({processed_count} processed)"
-                    )
-
-                    # Periodic save
-                    if save_interval > 0:
-                        new_samples_count = len(augmented_samples) - last_save_count
-                        if new_samples_count >= save_interval:
-                            print(
-                                f"\nSaving checkpoint: {len(augmented_samples)} total samples..."
-                            )
-                            save_dataset(augmented_samples, output_path)
-                            last_save_count = len(augmented_samples)
                 else:
                     stats[result.aug_type]["failed"] += 1
                     processed_count += 1
-                    # Update description for failed tasks too
-                    current_successful = len(augmented_samples)
-                    pbar.set_description(
-                        f"reqs={current_requests} | Generating samples ({current_successful} successful, {processed_count} processed)"
-                        if target_samples is not None
-                        else f"reqs={current_requests} | Processing samples ({processed_count} processed)"
-                    )
-                    # Only update progress bar value if no target (since target is about successful samples)
-                    if target_samples is None:
-                        pbar.update(1)
 
-                # Check if we should stop processing remaining tasks
+                # Check if we should stop processing
                 if (
                     target_samples is not None
                     and len(augmented_samples) >= target_samples
                 ):
-                    # Cancel remaining tasks
-                    for remaining_future in task_futures:
-                        if not remaining_future.done():
-                            remaining_future.cancel()
                     break
-
-        pbar.close()
 
     print(f"\nCompleted after {pass_num + 1} pass(es) through the dataset")
     print("\nAugmentation Statistics:")
@@ -1473,7 +1576,7 @@ async def process_dataset_async(
             )
 
     # Final save (only if there are new samples since last save)
-    if len(augmented_samples) > last_save_count:
+    if len(augmented_samples) > last_save_count_ref[0]:
         print(f"\nPerforming final save: {len(augmented_samples)} total samples...")
         save_dataset(augmented_samples, output_path)
     elif augmented_samples:
