@@ -9,6 +9,7 @@ JOBS=(
     "Qwen/Qwen3-4B-Instruct-2507 1 1 1"
     "Qwen/Qwen3-8B 1 4 1"
 )
+BASE_OUTPUT_DIR=""
 
 # 2. Ensure the log directory exists before submitting
 mkdir -p ./logs/generation
@@ -39,7 +40,7 @@ cd $SCRATCH/posttraining-data/response_generation
 
 # Execute the generation script with the dynamically assigned variables
 srun --environment=activeuf --container-workdir="$SCRATCH/posttraining-data/response_generation" \\
-    bash -c "unset SSL_CERT_FILE && python -u run_generation.py --model '${MODEL}' --slurm-nodes ${NNODES} --dp-size ${DP} --tp-size ${TP}"
+    bash -c "unset SSL_CERT_FILE && python -u run_generation.py --base-output-dir '${BASE_OUTPUT_DIR}' --model '${MODEL}' --slurm-nodes ${NNODES} --dp-size ${DP} --tp-size ${TP}"
 EOF
 
 done

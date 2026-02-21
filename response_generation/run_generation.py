@@ -39,7 +39,7 @@ def main():
 
     model_full = args.model
     model_short = model_full.split("/")[-1]
-    scratch = os.environ.get("HOME", "/tmp") / "Apertus"
+    scratch = os.environ.get("SCRATCH", "/tmp")
 
     # 1. Launch the Server
     print(f"🚀 Submitting SGLang server job for {model_full}...")
