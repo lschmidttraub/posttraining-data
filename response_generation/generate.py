@@ -22,7 +22,7 @@ load_dotenv()
 async def main(args):
     client = AsyncOpenAI(
         base_url=args.base_url,
-        api_key="EMPTY", 
+        api_key="EMPTY",
     )
 
     if os.path.exists(args.dataset_path):
@@ -32,11 +32,11 @@ async def main(args):
         if isinstance(dataset, DatasetDict):
             dataset = dataset["train"]
 
-    # dataset = dataset.select(range(1000))
+    dataset = dataset.select(range(1000))
 
     # Get prompts (everything except the last message)
     dataset = dataset.map(lambda x: {"prompt": x["chosen"][:-1]})
-    
+
     semaphore = asyncio.Semaphore(1000)
 
     async def get_response(prompt):
@@ -50,11 +50,15 @@ async def main(args):
                 extra_body={"chat_template_kwargs": {"enable_thinking": False}},
             )
             content = res.choices[0].message.content
-            
+
             # Extract and format logprobs into a serializable list of dicts
             raw_logprobs = res.choices[0].logprobs.content
-            formatted_logprobs = [{"token": lp.token, "logprob": lp.logprob} for lp in raw_logprobs] if raw_logprobs else []
-            
+            formatted_logprobs = (
+                [{"token": lp.token, "logprob": lp.logprob} for lp in raw_logprobs]
+                if raw_logprobs
+                else []
+            )
+
             return {"response": content, "logprobs": formatted_logprobs}
 
     tasks = [get_response(p) for p in dataset["prompt"]]
