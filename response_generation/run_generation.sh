@@ -1,26 +1,29 @@
 #!/bin/bash
 
-# 1. Define the list of models to process
-MODELS=(
-    "Qwen/Qwen3-0.6B"
-    "Qwen/Qwen3-1.7B"
-    "Qwen/Qwen3-4B-Instruct-2507"
-    "Qwen/Qwen3-8B"
-
-    "Qwen/Qwen2.5-0.5B-Instruct"
-    "Qwen/Qwen2.5-1.5B-Instruct"
+# 1. Define the list of jobs as formatted strings: "ModelName nnodes dp_size tp_size"
+JOBS=(
+    "Qwen/Qwen2.5-0.5B-Instruct 1 4 1"
+    "Qwen/Qwen2.5-1.5B-Instruct 1 4 1"
+    "Qwen/Qwen3-0.6B 1 4 1"
+    "Qwen/Qwen3-1.7B 1 4 1"
+    "Qwen/Qwen3-4B-Instruct-2507 1 1 1"
+    "Qwen/Qwen3-8B 1 4 1"
 )
 
 # 2. Ensure the log directory exists before submitting
 mkdir -p ./logs/generation
 
-# 3. Loop through each model and submit an independent job
-for MODEL in "${MODELS[@]}"; do
+# TODO: adapt for multinode setup. 
+# 3. Loop through each defined job
+for ENTRY in "${JOBS[@]}"; do
     
-    # Create a safe filename by replacing slashes with underscores (e.g., Qwen_Qwen3-8B)
+    # Extract the tuple values into separate variables
+    read -r MODEL NNODES DP TP <<< "$ENTRY"
+    
+    # Create a safe filename by replacing slashes with underscores
     SAFE_MODEL_NAME=$(echo "$MODEL" | tr '/' '_')
     
-    echo "Submitting generation job for: $MODEL"
+    echo "Submitting generation job for: $MODEL (Nodes: $NNODES, DP: $DP, TP: $TP)"
     
     # 4. Pass the SLURM directives and execution command directly to sbatch
     sbatch <<EOF
@@ -33,9 +36,10 @@ for MODEL in "${MODELS[@]}"; do
 #SBATCH --nodes=1
 
 cd $SCRATCH/posttraining-data/response_generation
-# Execute the generation script (assuming run_generation.py is the orchestrator)
-srun --environment=activeuf --container-workdir="$SCRATCH/posttraining-data/response_generation" \
-    bash -c "unset SSL_CERT_FILE && python -u run_generation.py --model '${MODEL}'"
+
+# Execute the generation script with the dynamically assigned variables
+srun --environment=activeuf --container-workdir="$SCRATCH/posttraining-data/response_generation" \\
+    bash -c "unset SSL_CERT_FILE && python -u run_generation.py --model '${MODEL}' --slurm-nodes ${NNODES} --dp-size ${DP} --tp-size ${TP}"
 EOF
 
 done

@@ -3,8 +3,7 @@ Lightweight script to send requests to a previously started OpenAI API server.
 To start a server, see https://github.com/swiss-ai/model-launch.
 
 Usage:
-    python generate.py --dataset-path allenai/Dolci-Instruct-DPO --output-dir ./datasets/dolci_qwen3_8b --model Qwen/Qwen3-8B --base-url http://172.28.43.156:8080/v1
-    http://172.28.43.232:8080/v1
+    python generate.py --dataset-path allenai/Dolci-Instruct-DPO --output-dir ./datasets/dolci_qwen3_8b --model Qwen/Qwen3-8B --base-url http://172.28.42.128:8080/v1
 """
 
 import os
@@ -23,7 +22,7 @@ load_dotenv()
 async def main(args):
     client = AsyncOpenAI(
         base_url=args.base_url,
-        api_key="EMPTY", #"EMPTY", #os.environ.get("CSCS_SERVING_KEY"),
+        api_key="EMPTY", 
     )
 
     if os.path.exists(args.dataset_path):
@@ -33,12 +32,11 @@ async def main(args):
         if isinstance(dataset, DatasetDict):
             dataset = dataset["train"]
 
-    dataset = dataset.select(range(1000))
+    # dataset = dataset.select(range(1000))
 
     # Get prompts (everything except the last message)
     dataset = dataset.map(lambda x: {"prompt": x["chosen"][:-1]})
-
-    # semaphore = asyncio.Semaphore(1000)
+    
     semaphore = asyncio.Semaphore(1000)
 
     async def get_response(prompt):
@@ -47,17 +45,34 @@ async def main(args):
                 model=args.model,
                 messages=prompt,
                 max_tokens=8192,
+                logprobs=True,
+                top_logprobs=1,
                 extra_body={"chat_template_kwargs": {"enable_thinking": False}},
             )
-            return res.choices[0].message.content
+            content = res.choices[0].message.content
+            
+            # Extract and format logprobs into a serializable list of dicts
+            raw_logprobs = res.choices[0].logprobs.content
+            formatted_logprobs = [{"token": lp.token, "logprob": lp.logprob} for lp in raw_logprobs] if raw_logprobs else []
+            
+            return {"response": content, "logprobs": formatted_logprobs}
 
     tasks = [get_response(p) for p in dataset["prompt"]]
-    responses = await tqdm_asyncio.gather(*tasks, desc="Generating")
+    results = await tqdm_asyncio.gather(*tasks, desc="Generating")
 
+    # Unpack the results into separate lists
+    responses = [r["response"] for r in results]
+    logprobs = [r["logprobs"] for r in results]
+
+    # Add both as new columns
     dataset = dataset.add_column("response", responses)
+    dataset = dataset.add_column("logprobs", logprobs)
 
     output_dir = args.output_dir
     dataset.save_to_disk(output_dir)
+    # saving the model name used for generation in a text file in the output_dir
+    with open(os.path.join(output_dir, "model_used.txt"), "w") as f:
+        f.write(args.model)
 
     # Save the first sample as JSON to the output_dir
     with open(

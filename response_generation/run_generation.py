@@ -14,6 +14,7 @@ def main():
     # New arguments exposed to the user
     parser.add_argument("--slurm-nodes", type=int, default=1, help="Total number of nodes to allocate for the server")
     parser.add_argument("--dp-size", type=int, default=4, help="Data parallelism size (GPUs per node)")
+    parser.add_argument("--tp-size", type=int, default=1, help="Tensor parallelism size (GPUs per node)")
     
     args = parser.parse_args()
 
@@ -31,7 +32,7 @@ def main():
         "--slurm-time", "09:00:00",
         "--serving-framework", "sglang",
         "--slurm-environment", f"{scratch}/model-launch/serving/sglang.toml",
-        "--framework-args", f"--model-path {model_full} --host 0.0.0.0 --port 8080 --served-model-name {model_full} --max-running-requests 2000 --mem-fraction-static 0.95 --dp-size {args.dp_size}"
+        "--framework-args", f"--model-path {model_full} --host 0.0.0.0 --port 8080 --served-model-name {model_full} --max-running-requests 2000 --mem-fraction-static 0.95 --dp-size {args.dp_size} --tp-size {args.tp_size}"
     ]
     
     job_id = None
@@ -90,7 +91,7 @@ def main():
         
     print("✅ Server is fully initialized and ready!")
 
-    output_dir = f"./output/{safe_model}"
+    output_dir = f"./output/{model_short}"
     
     print(f"⚙️ Launching generate.py. Outputting to {output_dir}")
     generate_cmd = [
