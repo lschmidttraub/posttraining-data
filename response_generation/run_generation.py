@@ -20,6 +20,9 @@ def main():
     parser.add_argument(
         "--base-output-dir", type=str, default="./output", help="Base output directory"
     )
+    parser.add_argument(
+        "--job-time", type=str, default="09:00:00", help="Job time limit"
+    )
 
     # New arguments exposed to the user
     parser.add_argument(
@@ -51,7 +54,7 @@ def main():
         "--slurm-nodes",
         str(args.slurm_nodes),
         "--slurm-time",
-        "09:00:00",
+        str(args.job_time),
         "--serving-framework",
         "sglang",
         "--slurm-environment",
