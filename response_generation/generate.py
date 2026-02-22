@@ -32,7 +32,7 @@ async def main(args):
         if isinstance(dataset, DatasetDict):
             dataset = dataset["train"]
 
-    dataset = dataset.select(range(1000))
+    # dataset = dataset.select(range(50))
 
     # Get prompts (everything except the last message)
     dataset = dataset.map(lambda x: {"prompt": x["chosen"][:-1]})
