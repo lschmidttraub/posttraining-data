@@ -14,7 +14,9 @@ import argparse
 from openai import AsyncOpenAI
 from dotenv import load_dotenv
 from datasets import load_from_disk, load_dataset, DatasetDict
+from tqdm import tqdm
 from tqdm.asyncio import tqdm_asyncio
+from transformers import AutoTokenizer
 
 load_dotenv()
 
@@ -31,42 +33,83 @@ async def main(args):
         dataset = load_dataset(args.dataset_path)
         if isinstance(dataset, DatasetDict):
             dataset = dataset["train"]
-
-    # dataset = dataset.select(range(50))
+    print(f"Loaded {len(dataset)} samples from {args.dataset_path}")
 
     # Get prompts (everything except the last message)
     dataset = dataset.map(lambda x: {"prompt": x["chosen"][:-1]})
+    all_prompts = dataset["prompt"]
 
-    semaphore = asyncio.Semaphore(1000)
+    # Filter out prompts that are too long
+    valid_indices = list(range(len(all_prompts)))
+    if args.max_tokens is not None:
+        tokenizer = AutoTokenizer.from_pretrained(args.model)
+
+        valid_indices = []
+        too_long_count = 0
+
+        for i, messages in tqdm(
+            enumerate(all_prompts),
+            total=len(all_prompts),
+            desc="Checking prompt lengths",
+        ):
+            prompt_text = tokenizer.apply_chat_template(
+                messages, tokenize=False, add_generation_prompt=True
+            )
+            num_tokens = len(tokenizer.encode(prompt_text))
+            if num_tokens < args.max_tokens:
+                valid_indices.append(i)
+            else:
+                too_long_count += 1
+
+        print(
+            f"Found {too_long_count} prompts that are too long (will use empty response)"
+        )
+    valid_prompts = [all_prompts[i] for i in valid_indices]
+
+    semaphore = asyncio.Semaphore(args.concurrent)
 
     async def get_response(prompt):
         async with semaphore:
-            res = await client.chat.completions.create(
-                model=args.model,
-                messages=prompt,
-                max_tokens=8192,
-                logprobs=True,
-                top_logprobs=1,
-                extra_body={"chat_template_kwargs": {"enable_thinking": False}},
+            try:
+                res = await client.chat.completions.create(
+                    model=args.model,
+                    messages=prompt,
+                    logprobs=True,
+                    top_logprobs=1,
+                    extra_body={"chat_template_kwargs": {"enable_thinking": False}},
+                )
+                content = res.choices[0].message.content
+
+                # Extract and format logprobs into a serializable list of dicts
+                raw_logprobs = res.choices[0].logprobs.content
+                formatted_logprobs = (
+                    [{"token": lp.token, "logprob": lp.logprob} for lp in raw_logprobs]
+                    if raw_logprobs
+                    else []
+                )
+
+                return {"response": content, "logprobs": formatted_logprobs}
+            except Exception as e:
+                print(f"Error generating response: {e}")
+                return {"response": "", "logprobs": []}
+
+    tasks = [get_response(p) for p in valid_prompts]
+    valid_results = await tqdm_asyncio.gather(*tasks, desc="Generating")
+
+    all_results = []
+    valid_results_iter = iter(valid_results)
+    for i in range(len(all_prompts)):
+        if i in valid_indices:
+            result = next(valid_results_iter)
+            all_results.append(
+                {"response": result["response"], "logprobs": result["logprobs"]}
             )
-            content = res.choices[0].message.content
-
-            # Extract and format logprobs into a serializable list of dicts
-            raw_logprobs = res.choices[0].logprobs.content
-            formatted_logprobs = (
-                [{"token": lp.token, "logprob": lp.logprob} for lp in raw_logprobs]
-                if raw_logprobs
-                else []
-            )
-
-            return {"response": content, "logprobs": formatted_logprobs}
-
-    tasks = [get_response(p) for p in dataset["prompt"]]
-    results = await tqdm_asyncio.gather(*tasks, desc="Generating")
+        else:
+            all_results.append({"response": "", "logprobs": []})
 
     # Unpack the results into separate lists
-    responses = [r["response"] for r in results]
-    logprobs = [r["logprobs"] for r in results]
+    responses = [r["response"] for r in all_results]
+    logprobs = [r["logprobs"] for r in all_results]
 
     # Add both as new columns
     dataset = dataset.add_column("response", responses)
@@ -90,6 +133,8 @@ if __name__ == "__main__":
     parser.add_argument("--dataset-path", type=str, required=True)
     parser.add_argument("--output-dir", type=str, required=True)
     parser.add_argument("--model", type=str, required=True)
+    parser.add_argument("--max-tokens", type=int, default=None)
+    parser.add_argument("--concurrent", type=int, default=1000)
     parser.add_argument(
         "--base-url", type=str, default="https://api.swissai.cscs.ch/v1"
     )
