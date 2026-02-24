@@ -6,8 +6,14 @@ JOBS=(
     "Qwen/Qwen2.5-1.5B-Instruct 1 4 1"
     "Qwen/Qwen3-0.6B 1 4 1"
     "Qwen/Qwen3-1.7B 1 4 1"
-    "Qwen/Qwen3-4B-Instruct-2507 1 1 1"
+    "Qwen/Qwen3-4B-Instruct-2507 1 1 1" #3 gpus unutilized. 
     "Qwen/Qwen3-8B 1 4 1"
+    "Qwen/Qwen3-32B 2 4 1"
+    "Qwen/Qwen3-30B-A3B-Instruct-2507 2 1 4"
+    "Qwen/Qwen3-Omni-30B-A3B-Instruct 2 1 4"
+    "Qwen/Qwen3-Omni-30B-A3B-Instruct 2 1 4"
+    "Qwen/Qwen3-Next-80B-A3B-Instruct 2 1 4"
+    "Qwen/Qwen3-235B-A22B-Instruct-2507 4 1 8"
 )
 
 # 2. Ensure the log directory exists before submitting

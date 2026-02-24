@@ -25,15 +25,28 @@ def main():
     # 1. Launch the Server
     print(f"🚀 Submitting SGLang server job for {model_full}...")
     
-    # Injecting the new dynamic arguments
+    # Base command
     submit_cmd = [
         "python", f"{scratch}/model-launch/serving/submit_job.py",
         "--slurm-nodes", str(args.slurm_nodes),
         "--slurm-time", "09:00:00",
         "--serving-framework", "sglang",
-        "--slurm-environment", f"{scratch}/model-launch/serving/sglang.toml",
-        "--framework-args", f"--model-path {model_full} --host 0.0.0.0 --port 8080 --served-model-name {model_full} --max-running-requests 2000 --mem-fraction-static 0.95 --dp-size {args.dp_size} --tp-size {args.tp_size}"
+        "--worker-port", "8000",
+        "--slurm-environment", f"{scratch}/model-launch/serving/sglang_latest.toml",
     ]
+    
+    # --- MODIFICATION 1: Inject router flags for multi-node ---
+    if args.slurm_nodes > 1:
+        submit_cmd.extend([
+            "--workers", str(args.slurm_nodes),
+            "--nodes-per-worker", "1",
+            "--use-router"
+        ])
+    
+    # Add the framework args
+    submit_cmd.extend([
+        "--framework-args", f"--model-path {model_full} --host 0.0.0.0 --port 8080 --served-model-name {model_full} --dp-size {args.dp_size} --tp-size {args.tp_size}"
+    ])
     
     job_id = None
     try:
@@ -58,16 +71,26 @@ def main():
     print(f"⏳ Waiting for SLURM log file at: {log_file}")
     
     base_url = None
+    
+    # --- MODIFICATION 2: Look for the correct log prefix based on architecture ---
+    target_log_prefix = "Router URL: " if args.slurm_nodes > 1 else "All worker URLs: "
+    
     while True:
         if os.path.exists(log_file):
             with open(log_file, "r") as f:
                 content = f.read()
-                if "All worker URLs: " in content:
+                if target_log_prefix in content:
                     for line in content.splitlines():
-                        if line.startswith("All worker URLs: "):
-                            raw_url = line.split("All worker URLs: ")[1].strip()
-                            ip_part = raw_url.rsplit(":", 1)[0]
-                            base_url = f"{ip_part}:8080/v1"
+                        if line.startswith(target_log_prefix):
+                            raw_url = line.split(target_log_prefix)[1].strip()
+                            
+                            if args.slurm_nodes > 1:
+                                # Router URL already has the correct port (e.g., http://IP:30000)
+                                base_url = f"{raw_url}/v1"
+                            else:
+                                # For single worker, use the existing logic to force port 8080
+                                ip_part = raw_url.rsplit(":", 1)[0]
+                                base_url = f"{ip_part}:8080/v1"
                             break
             if base_url:
                 break
@@ -79,10 +102,15 @@ def main():
     health_url = base_url.replace("/v1", "/health")
     print(f"⏳ Waiting for SGLang to load model weights and bind to port (checking {health_url})...")
     
+    # --- MODIFICATION 3: Bypass Python's global proxy for the health check ---
+    proxy_handler = urllib.request.ProxyHandler({})
+    opener = urllib.request.build_opener(proxy_handler)
+
     while True:
         try:
             req = urllib.request.Request(health_url)
-            with urllib.request.urlopen(req, timeout=5) as response:
+            # Use the proxy-bypassing opener instead of standard urlopen
+            with opener.open(req, timeout=5) as response:
                 if response.getcode() == 200:
                     break
         except urllib.error.URLError:
