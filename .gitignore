@@ -16,3 +16,4 @@ judge-analysis/*.json
 logs/
 *.log
 output/
+datasets/
