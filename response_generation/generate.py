@@ -54,6 +54,7 @@ async def main(args):
                 return idx, content, lp
             except Exception as e:
                 # Print error but keep going
+                print(f"Error for index {idx}: {e}")
                 return idx, "", []
 
     batch_size = 25000
