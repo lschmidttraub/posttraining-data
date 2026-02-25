@@ -2,20 +2,29 @@
 
 # Format: "ModelName TotalNodes Workers NodesPerWorker DP TP DisableOCF(true/false)"
 JOBS=(
-    "Qwen/Qwen2.5-0.5B-Instruct 1 1 1 4 1 false"
-    "Qwen/Qwen2.5-1.5B-Instruct 1 1 1 4 1 false"
-    "Qwen/Qwen3-0.6B 1 1 1 4 1 false"
-    "Qwen/Qwen3-1.7B 1 1 1 4 1 false"
-    "Qwen/Qwen3-4B-Instruct-2507 1 1 1 4 1 false"
-    "Qwen/Qwen3-8B 1 1 1 4 1 false"
-    "Qwen/Qwen3-32B 4 4 1 4 1 false"
-    "Qwen/Qwen3-30B-A3B-Instruct-2507 4 4 1 1 4 false"
-    "Qwen/Qwen3-Omni-30B-A3B-Instruct 4 4 1 1 4 false"
-    "Qwen/Qwen3-Next-80B-A3B-Instruct 4 4 1 1 4 false"
+    "Qwen/Qwen2.5-0.5B-Instruct 1 1 1 4 1 false sglang"
+    "Qwen/Qwen2.5-1.5B-Instruct 1 1 1 4 1 false sglang"
+    "Qwen/Qwen3-0.6B 1 1 1 4 1 false sglang"
+    "Qwen/Qwen3-1.7B 1 1 1 4 1 false sglang"
+    "Qwen/Qwen3-4B-Instruct-2507 1 1 1 4 1 false sglang"
+    "Qwen/Qwen3-8B 1 1 1 4 1 false sglang"
+    "Qwen/Qwen3-32B 4 4 1 4 1 false sglang"
+    "Qwen/Qwen3-30B-A3B-Instruct-2507 4 4 1 1 4 false sglang"
+    "Qwen/Qwen3-Omni-30B-A3B-Instruct 4 4 1 1 4 false sglang"
+    "Qwen/Qwen3-Next-80B-A3B-Instruct 4 4 1 1 4 false sglang"
     "Qwen/Qwen3-235B-A22B-Instruct-2507 16 8 2 1 8 true"
-    "microsoft/Phi-4-mini-instruct 1 1 1 4 1 false"
-    "mistralai/Mistral-Small-24B-Instruct-2501 4 4 1 1 4 false"
-    "mistralai/Mixtral-8x22B-Instruct-v0.1 16 8 2 1 8 true"
+    "microsoft/Phi-4-mini-instruct 1 1 1 4 1 false sglang"
+    "mistralai/Mistral-Small-24B-Instruct-2501 4 4 1 1 4 false sglang"
+    "mistralai/Mixtral-8x22B-Instruct-v0.1 16 8 2 1 8 true sglang"
+    "mistralai/Ministral-3-3B-Instruct-2512 1 1 1 4 1 false sglang"
+    "mistralai/Ministral-3-8B-Instruct-2512 1 1 1 4 1 false sglang"
+    "mistralai/Ministral-3-14B-Instruct-2512 1 1 1 4 1 false sglang"
+    "arcee-ai/Trinity-Mini 1 1 1 4 1 false vllm"
+    "arcee-ai/Trinity-Nano-Preview 1 1 1 4 1 false vllm"
+    "HuggingFaceTB/SmolLM3-3B 1 1 1 4 1 false sglang"
+    "utter-project/EuroLLM-1.7B-Instruct 1 1 1 4 1 false sglang"
+    "utter-project/EuroLLM-9B-Instruct-2512 1 1 1 4 1 false sglang"
+    "utter-project/EuroLLM-22B-Instruct-2512 1 1 1 4 1 false sglang"
 )
 
 BASE_OUTPUT_DIR="./datasets/inference_results"
@@ -58,6 +67,7 @@ srun --environment=activeuf --container-writable --container-workdir="${WORKING_
     --nodes-per-worker ${NPW} \\
     --dp-size ${DP} \\
     --tp-size ${TP} \\
+    --framework '${FRAMEWORK}' \\
     ${OCF_FLAG}"
 EOF
 done

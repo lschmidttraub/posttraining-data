@@ -19,6 +19,7 @@ def main():
     parser.add_argument("--tp-size", type=int, default=1)
     parser.add_argument("--use-router", action="store_true", help="Force use of router")
     parser.add_argument("--disable-ocf", action="store_true", help="Disable OCF optimization")
+    parser.add_argument("--framework", type=str, default="sglang", help="Serving framework (e.g., sglang, vllm)")
 
     args = parser.parse_args()
     model_short = args.model.split("/")[-1]
@@ -28,11 +29,11 @@ def main():
         "python", f"{scratch}/model-launch/serving/submit_job.py",
         "--slurm-nodes", str(args.slurm_nodes),
         "--slurm-time", args.job_time,
-        "--serving-framework", "sglang",
+        "--serving-framework", args.framework,
         "--worker-port", "8080",
-        "--slurm-environment", f"{scratch}/model-launch/serving/envs/sglang.toml",
+        "--slurm-environment", f"{scratch}/model-launch/serving/envs/{args.framework}.toml",
     ]
-
+    
     if args.use_router or args.slurm_nodes > 1 or args.workers > 1:
         submit_cmd.extend([
             "--workers", str(args.workers),
@@ -43,7 +44,12 @@ def main():
     if args.disable_ocf:
         submit_cmd.append("--disable-ocf")
     
-    fw_args = f"--model-path {args.model} --host 0.0.0.0 --port 8080 --served-model-name {args.model} --dp-size {args.dp_size} --tp-size {args.tp_size}"
+    if args.framework == "sglang":
+        fw_args = f"--model-path {args.model} --host 0.0.0.0 --port 8080 --served-model-name {args.model} --dp-size {args.dp_size} --tp-size {args.tp_size}"
+    elif args.framework == "vllm":
+        fw_args = f"--model {args.model} --host 0.0.0.0 --port 8080 --served-model-name {args.model} --data-parallel-size {args.dp_size} --tensor-parallel-size {args.tp_size}"
+    else:
+        raise ValueError(f"Invalid framework: {args.framework}")
     
     submit_cmd.extend(["--framework-args", fw_args])
 
