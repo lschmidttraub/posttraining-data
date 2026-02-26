@@ -6,6 +6,7 @@ import multiprocessing
 from openai import AsyncOpenAI
 from datasets import load_from_disk, load_dataset, DatasetDict
 from tqdm.asyncio import tqdm_asyncio
+from tqdm import tqdm
 from transformers import AutoTokenizer
 
 async def main(args):
@@ -17,7 +18,11 @@ async def main(args):
         dataset = load_dataset(args.dataset_path, split="train")
 
     print(f"Extracting prompts from {len(dataset)} samples...")
-    all_prompts = [sample["chosen"][:-1] for sample in dataset]
+    all_prompts = []
+    for sample in tqdm(dataset):
+        messages = [{"role": m["role"], "content": m["content"]} for m in sample["chosen"][:-1]]
+        all_prompts.append(messages)
+    
     
     valid_indices = []
     if args.max_tokens is not None:
@@ -41,13 +46,17 @@ async def main(args):
     async def get_response(idx):
         async with semaphore:
             try:
+                kwargs = {}
+                if not "mistral" in args.model.lower():
+                    kwargs["extra_body"] = {"chat_template_kwargs": {"enable_thinking": False}}
+
                 res = await client.chat.completions.create(
                     model=args.model,
                     messages=all_prompts[idx],
                     logprobs=True,
                     top_logprobs=1,
-                    max_tokens=args.max_length,
-                    extra_body={"chat_template_kwargs": {"enable_thinking": False}},
+                    max_tokens=model_to_max_tokens.get(args.model, args.max_length),
+                    **kwargs
                 )
                 content = res.choices[0].message.content
                 lp = [{"token": l.token, "logprob": l.logprob} for l in res.choices[0].logprobs.content]

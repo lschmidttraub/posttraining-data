@@ -45,9 +45,11 @@ def main():
         submit_cmd.append("--disable-ocf")
     
     if args.framework == "sglang":
-        fw_args = f"--model-path {args.model} --host 0.0.0.0 --port 8080 --served-model-name {args.model} --dp-size {args.dp_size} --tp-size {args.tp_size}"
+        fw_args = f"--model-path {args.model} --host 0.0.0.0 --port 8080 --served-model-name {args.model} --dp-size {args.dp_size} --tp-size {args.tp_size} --trust-remote-code"
     elif args.framework == "vllm":
-        fw_args = f"--model {args.model} --host 0.0.0.0 --port 8080 --served-model-name {args.model} --data-parallel-size {args.dp_size} --tensor-parallel-size {args.tp_size}"
+        fw_args = f"--model {args.model} --host 0.0.0.0 --port 8080 --served-model-name {args.model} --data-parallel-size {args.dp_size} --tensor-parallel-size {args.tp_size} --trust-remote-code"
+        if "mistral" in args.model.lower():
+            fw_args += " --tokenizer_mode mistral --load_format mistral --config_format mistral"
     else:
         raise ValueError(f"Invalid framework: {args.framework}")
     
