@@ -2,6 +2,8 @@ import os
 import json
 import asyncio
 import argparse
+import httpx
+import uvloop
 from openai import AsyncOpenAI
 from datasets import load_from_disk, load_dataset
 from transformers import AutoTokenizer
@@ -41,9 +43,25 @@ async def get_response(idx, prompt, client, model, max_length, temperature, sema
         })
 
 async def main(args):
-    client = AsyncOpenAI(base_url=args.base_url, api_key="EMPTY")
+    # 1. UNLOCK HTTPX LIMITS
+    # Ensure the HTTP connection pool matches the exact size of your semaphore
+    custom_limits = httpx.Limits(
+        max_connections=args.concurrent, 
+        max_keepalive_connections=args.concurrent
+    )
+    
+    # 10 minutes timeout for handling massive batch processing delays
+    custom_timeout = httpx.Timeout(7200.0) 
+    
+    http_client = httpx.AsyncClient(limits=custom_limits, timeout=custom_timeout)
 
-    # 1. Load Dataset
+    client = AsyncOpenAI(
+        base_url=args.base_url, 
+        api_key="EMPTY",
+        http_client=http_client
+    )
+
+    # 2. Load Dataset
     if os.path.exists(args.dataset_path):
         dataset = load_from_disk(args.dataset_path)
     else:
@@ -52,7 +70,7 @@ async def main(args):
     os.makedirs(args.output_dir, exist_ok=True)
     output_jsonl = os.path.join(args.output_dir, "responses.jsonl")
 
-    # 2. Fast Resume logic (Read existing JSONL)
+    # 3. Fast Resume logic (Read existing JSONL)
     processed_indices = set()
     if os.path.exists(output_jsonl):
         with open(output_jsonl, "r", encoding="utf-8") as f:
@@ -64,9 +82,11 @@ async def main(args):
 
     if len(processed_indices) >= len(dataset):
         print("Already finished processing the entire dataset.")
+        # Make sure to close the client before returning early
+        await http_client.aclose()
         return
 
-    # 3. Extract and Filter Prompts
+    # 4. Extract and Filter Prompts
     print(f"Extracting prompts from {len(dataset)} samples...")
     all_prompts = [sample["chosen"][:-1] for sample in dataset]
     
@@ -88,16 +108,17 @@ async def main(args):
 
     if not valid_indices:
         print("No valid prompts left to process.")
+        await http_client.aclose()
         return
 
-    # 4. Setup Async Queue and Concurrency
+    # 5. Setup Async Queue and Concurrency
     queue = asyncio.Queue()
     semaphore = asyncio.Semaphore(args.concurrent)
     
     # Start the background writer task
     writer = asyncio.create_task(writer_task(queue, output_jsonl))
 
-    # 5. Create and Run Tasks
+    # 6. Create and Run Tasks
     print(f"🚀 Processing {len(valid_indices)} prompts...")
     tasks = [
         get_response(idx, all_prompts[idx], client, args.model, args.max_length, args.temperature, semaphore, queue) 
@@ -108,13 +129,16 @@ async def main(args):
     for f in tqdm_asyncio.as_completed(tasks, total=len(tasks)):
         await f
 
-    # 6. Shutdown Writer gracefully
+    # 7. Shutdown Writer gracefully
     await queue.put(None)
     await writer
 
+    # Close the custom http client properly
+    await http_client.aclose()
+
     print("✅ All requests completed and written to JSONL.")
 
-    # 7. (Optional) Final Reconstruction into Hugging Face Dataset
+    # 8. (Optional) Final Reconstruction into Hugging Face Dataset
     print(f"💾 Reconstructing and saving final dataset to {args.output_dir}")
     
     # Load everything back into ordered memory just once at the end
@@ -132,13 +156,18 @@ async def main(args):
         f.write(args.model)
 
 if __name__ == "__main__":
+    # Install uvloop for maximum performance before anything else
+    uvloop.install()
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset-path", type=str, required=True)
     parser.add_argument("--output-dir", type=str, required=True)
     parser.add_argument("--model", type=str, required=True)
     parser.add_argument("--max-tokens", type=int, default=None)
     parser.add_argument("--max-length", type=int, default=4096)
-    parser.add_argument("--concurrent", type=int, default=1000)
+    
+    # Increased default concurrency to better saturate the 16 nodes
+    parser.add_argument("--concurrent", type=int, default=2500)
     parser.add_argument("--base-url", type=str, default="https://serving.swissai.cscs.ch/")
     parser.add_argument("--temperature", type=float, default=1.0)
     args = parser.parse_args()

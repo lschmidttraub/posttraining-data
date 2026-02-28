@@ -12,7 +12,7 @@ JOBS=(
     "Qwen/Qwen3-30B-A3B-Instruct-2507 4 4 1 1 4 false sglang"
     "Qwen/Qwen3-Omni-30B-A3B-Instruct 4 4 1 1 4 false sglang"
     "Qwen/Qwen3-Next-80B-A3B-Instruct 4 4 1 1 4 false sglang"
-    "Qwen/Qwen3-235B-A22B-Instruct-2507 16 8 2 1 8 true"
+    "Qwen/Qwen3-235B-A22B-Instruct-2507 32 16 2 1 8 true sglang"
     "microsoft/Phi-4-mini-instruct 1 1 1 4 1 false sglang"
     "mistralai/Mistral-Small-24B-Instruct-2501 4 4 1 1 4 false sglang"
     "mistralai/Mixtral-8x22B-Instruct-v0.1 16 8 2 1 8 true sglang"
@@ -27,8 +27,8 @@ JOBS=(
     "utter-project/EuroLLM-22B-Instruct-2512 1 1 1 4 1 false sglang"
 )
 
-BASE_OUTPUT_DIR="./datasets/inference_results"
-JOB_TIME="03:00:00"
+BASE_OUTPUT_DIR="./datasets/inference_results_final"
+JOB_TIME="12:00:00"
 
 ACCOUNT="infra01"
 RESERVATION="PA-2338-RL"
@@ -37,7 +37,7 @@ WORKING_DIR="$SCRATCH/posttraining-data/response_generation"
 mkdir -p ./logs/generation
 
 for ENTRY in "${JOBS[@]}"; do
-    read -r MODEL NNODES WORKERS NPW DP TP DOCF <<< "$ENTRY"
+    read -r MODEL NNODES WORKERS NPW DP TP DOCF FRAMEWORK <<< "$ENTRY"
     SAFE_MODEL_NAME=$(echo "$MODEL" | tr '/' '_')
 
     OCF_FLAG=""
@@ -50,7 +50,7 @@ for ENTRY in "${JOBS[@]}"; do
 #SBATCH --account=${ACCOUNT}
 #SBATCH --output=./logs/generation/${SAFE_MODEL_NAME}_%j.log
 #SBATCH --time=${JOB_TIME}
-##SBATCH --reservation=${RESERVATION}                 # Uncomment if you have a reservation to use
+#SBATCH --reservation=${RESERVATION}                 # Uncomment if you have a reservation to use
 #SBATCH --partition=normal
 #SBATCH --nodes=1
 
