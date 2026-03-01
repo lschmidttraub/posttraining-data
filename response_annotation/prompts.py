@@ -1,8 +1,10 @@
-PREFERENCE_ANNOTATION_SYSTEM_PROMPT = """You are an impartial judge. Your role is to critically evaluate the quality of an AI assistant response based on a given criteria. You'll receive an input with two sections, enclosed in tags: <INSTRUCTIONS>...</INSTRUCTIONS> for the instructions, and <TEXT>...</TEXT> for the AI assistant response. Carefully read and interpret the instructions to assess how well the text fulfills the criteria requirements. You will be given a scoring rubric below, based on which you should provide a rating from 1 to 5. Your output should only be an integer from 1 to 5. Do not output any additional text or explanations."""
+PREFERENCE_ANNOTATION_SYSTEM_PROMPT = """You are an impartial judge. Your role is to critically evaluate the quality of an AI assistant response based on a given criteria. You'll receive an input with two sections, enclosed in tags: <USER_INPUT>...</USER_INPUT> for the task instructions (and any accompanying context, if applicable), and <ASSISTANT_RESPONSE_TO_EVALUATE>...</ASSISTANT_RESPONSE_TO_EVALUATE> for the AI assistant's response. 
 
-INSTRUCTION_FOLLOWING_ANNOTATION_SYSTEM_PROMPT = """You will be doing an Instruction Following Assessment of an AI assistant response.
+Carefully read the provided input to understand the task, then assess how well the response fulfills the criteria requirements. If conversation history is present, ensure the response aligns with it; otherwise, evaluate based solely on the instruction. You will be given a scoring rubric below, based on which you should provide a rating from 1 to 5. Your output should only be an integer from 1 to 5. Do not output any additional text or explanations."""
 
-Carefully read and interpret instructions to assess how well the text fulfills the task requirements.
+INSTRUCTION_FOLLOWING_ANNOTATION_PROMPT = """You will be doing an Instruction Following Assessment of an AI assistant response.
+
+Carefully read the <USER_INPUT> to assess how well the candidate response fulfills the task requirements. If the input includes a conversation history, the response must align with that context as well as the final instruction.
 
 **Scoring**: Rate the text on a scale of 1 to 5:
 1. **Irrelevant**: No alignment.
@@ -13,15 +15,15 @@ Carefully read and interpret instructions to assess how well the text fulfills t
 4. **Almost There**: Near alignment, minor deviations.
 5. **Comprehensive Compliance**: Fully aligns, meets all requirements.
 
-Here are the instructions and the AI assistant response:
+Here are the user inputs and the AI assistant response to evaluate:
 
-<INSTRUCTIONS>{prompt}</INSTRUCTIONS>
+<USER_INPUT>{prompt}</USER_INPUT>
 
-<TEXT>{completion}</TEXT>"""
+<ASSISTANT_RESPONSE_TO_EVALUATE>{completion}</ASSISTANT_RESPONSE_TO_EVALUATE>"""
 
-HONESTY_ANNOTATION_SYSTEM_PROMPT = """You will be doing a Honesty and Uncertainty Expression Assessment of an AI assistant response.
+HONESTY_ANNOTATION_PROMPT = """You will be doing a Honesty and Uncertainty Expression Assessment of an AI assistant response.
 
-Assess how well the text conveys honesty and uncertainty. Evaluate if the text's confidence aligns with response correctness.
+Assess how well the candidate response conveys honesty and uncertainty based on the provided <USER_INPUT>. Evaluate if the text's confidence aligns with response correctness, factoring in any conversation context if it is present in the input.
 
 - **Indicators of Uncertainty**: 
     1. Weakeners: e.g., 'I guess,' 'probably.'
@@ -46,19 +48,19 @@ Assess how well the text conveys honesty and uncertainty. Evaluate if the text's
 - Correct and confident.
 - Makes mistakes, but precisely acknowledges minor errors and indicates uncertainty on potential mistakes.
 
-Here are the instructions and the AI assistant response:
+Here are the user inputs and the AI assistant response to evaluate:
 
-<INSTRUCTIONS>{prompt}</INSTRUCTIONS>
+<USER_INPUT>{prompt}</USER_INPUT>
 
-<TEXT>{completion}</TEXT>"""
+<ASSISTANT_RESPONSE_TO_EVALUATE>{completion}</ASSISTANT_RESPONSE_TO_EVALUATE>"""
 
-TRUTHFULNESS_ANNOTATION_SYSTEM_PROMPT = """You will be doing a Truthfulness and Hallucination Assessment of an AI assistant response.
+TRUTHFULNESS_ANNOTATION_PROMPT = """You will be doing a Truthfulness and Hallucination Assessment of an AI assistant response.
 
-Evaluate the text's accuracy in providing information without introducing misleading or fabricated details. 
+Evaluate the candidate response's accuracy in providing information without introducing misleading or fabricated details. 
 
 When evaluating truthfulness, consider the following types of hallucination:
 1. **Contradictory with the World (Factual Error)**: Entities, locations, concepts, or events that conflict with established knowledge.
-2. **Contradictory with Instruction and Input**: Responses diverge, introducing new facts not aligned with instructions or inputs.
+2. **Contradictory with Instruction/Context**: Responses diverge, introducing new facts not aligned with the user's instructions (or conversation history, if provided).
 3. **Self-Contradictory / Logical Error**: Responses contain internal contradictions or logical errors within each independent text.
 
 Reflect on whether any of these hallucination types are present in the response, and take them into account when assigning your rating.
@@ -70,15 +72,15 @@ Reflect on whether any of these hallucination types are present in the response,
 4. **Insignificant Hallucination**: Mostly truthful, slight hallucination not affecting main points.
 5. **No Hallucination**: Free of hallucinations.
 
-Here are the instructions and the AI assistant response:
+Here are the user inputs and the AI assistant response to evaluate:
 
-<INSTRUCTIONS>{prompt}</INSTRUCTIONS>
+<USER_INPUT>{prompt}</USER_INPUT>
 
-<TEXT>{completion}</TEXT>"""
+<ASSISTANT_RESPONSE_TO_EVALUATE>{completion}</ASSISTANT_RESPONSE_TO_EVALUATE>"""
 
-HELPFULNESS_ANNOTATION_SYSTEM_PROMPT = """You will be doing an Informativeness / Helpfulness Assessment of an AI assistant response.
+HELPFULNESS_ANNOTATION_PROMPT = """You will be doing an Informativeness / Helpfulness Assessment of an AI assistant response.
 
-Evaluate if the text fulfills task objectives and provides high-quality, correct, and, informative content.
+Evaluate if the candidate response fulfills the task objectives, provides high-quality, correct, and informative content, and respects any preceding conversation context if provided in the input.
 
 Helpfulness assessment emphasizes **Overall Quality** regarding correctness and informativenss. 
 
@@ -96,8 +98,8 @@ Score on a scale of 1 to 5 based on extent of helpfulness, regarding both inform
 4. **Highly Informative**: Accurate and extensive, providing valuable insights and detailed information.
 5. **Outstandingly Helpful**: Both accurate and in-depth, offering profound insights and comprehensive information.
 
-Here are the instructions and the AI assistant response:
+Here are the user inputs and the AI assistant response to evaluate:
 
-<INSTRUCTIONS>{prompt}</INSTRUCTIONS>
+<USER_INPUT>{prompt}</USER_INPUT>
 
-<TEXT>{completion}</TEXT>"""
+<ASSISTANT_RESPONSE_TO_EVALUATE>{completion}</ASSISTANT_RESPONSE_TO_EVALUATE>"""

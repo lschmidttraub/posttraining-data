@@ -167,7 +167,7 @@ if __name__ == "__main__":
     parser.add_argument("--max-length", type=int, default=4096)
     
     # Increased default concurrency to better saturate the 16 nodes
-    parser.add_argument("--concurrent", type=int, default=2500)
+    parser.add_argument("--concurrent", type=int, default=5000)
     parser.add_argument("--base-url", type=str, default="https://serving.swissai.cscs.ch/")
     parser.add_argument("--temperature", type=float, default=1.0)
     args = parser.parse_args()

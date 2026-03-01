@@ -17,7 +17,6 @@ def main():
     parser.add_argument("--nodes-per-worker", type=int, default=1)
     parser.add_argument("--dp-size", type=int, default=1)
     parser.add_argument("--tp-size", type=int, default=1)
-    parser.add_argument("--use-router", action="store_true", help="Force use of router")
     parser.add_argument("--disable-ocf", action="store_true", help="Disable OCF optimization")
     parser.add_argument("--framework", type=str, default="sglang", help="Serving framework (e.g., sglang, vllm)")
     
@@ -36,7 +35,7 @@ def main():
             "--slurm-environment", f"{scratch}/model-launch/serving/envs/{args.framework}.toml",
         ]
         
-        if args.use_router or args.slurm_nodes > 1 or args.workers > 1:
+        if args.workers > 1:
             submit_cmd.extend([
                 "--workers", str(args.workers),
                 "--nodes-per-worker", str(args.nodes_per_worker),
@@ -78,11 +77,12 @@ def main():
 
         print(f"✅ Found Job ID: {job_id}")
     else:
+        # TODO: bad because we can't cancel the running server this way.
         job_id = ""
         
     log_file = f"./logs/{job_id}/log.out"
     base_url = args.base_url
-    target_prefix = "Router URL: " if (args.slurm_nodes > 1 or args.use_router) else "All worker URLs: "
+    target_prefix = "Router URL: " if args.workers > 1 else "All worker URLs: "
 
     while not base_url:
         if os.path.exists(log_file):
@@ -92,7 +92,7 @@ def main():
                     for line in content.splitlines():
                         if line.startswith(target_prefix):
                             raw = line.split(target_prefix)[1].strip()
-                            base_url = f"{raw}/v1" if (args.slurm_nodes > 1 or args.use_router) else f"{raw.rsplit(':', 1)[0]}:8080/v1"
+                            base_url = f"{raw}/v1" if args.workers > 1 else f"{raw.rsplit(':', 1)[0]}:8080/v1"
                             break
         time.sleep(5)
 
