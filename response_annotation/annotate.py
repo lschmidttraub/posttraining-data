@@ -235,7 +235,7 @@ if __name__ == "__main__":
     parser.add_argument("--dataset-path", type=str, required=True)
     parser.add_argument("--output-dir", type=str, required=True)
     parser.add_argument("--model", type=str, required=True, help="The judge model (e.g., Llama-3.3-70B-Instruct)")
-    parser.add_argument("--concurrent", type=int, default=2000, help="Total concurrent API connections")
+    parser.add_argument("--concurrent", type=int, default=1000, help="Total concurrent API connections")
     parser.add_argument("--base-url", type=str, default="https://serving.swissai.cscs.ch/")
     parser.add_argument("--temperature", type=float, default=0.0)
     args = parser.parse_args()
