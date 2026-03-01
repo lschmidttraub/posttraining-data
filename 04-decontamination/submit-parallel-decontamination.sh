@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Script to submit parallel decontamination SLURM job arrays
-# Usage: ./submit_parallel_decontamination.sh <input_dataset_path> <output_dataset_path> [chunk_size] [max_parallel_jobs]
+# Usage: ./submit_parallel_decontamination.sh <input_dataset_path> <output_dataset_path> [chunk_size] [max_parallel_jobs] [slurm_reservation]
 
 # Get the directory where this script is located
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
@@ -14,16 +14,18 @@ DEFAULT_MAX_PARALLEL=20
 DECONTAMINATION_PROMPTS="/capstor/store/cscs/swissai/infra01/posttrain_data/04_decontaminated/decontamination_prompts"
 
 # Check if correct number of arguments provided
-if [ $# -lt 2 ] || [ $# -gt 4 ]; then
-    echo "Usage: $0 <input_dataset_path> <output_dataset_path> [chunk_size] [max_parallel_jobs]"
+if [ $# -lt 2 ] || [ $# -gt 5 ]; then
+    echo "Usage: $0 <input_dataset_path> <output_dataset_path> [chunk_size] [max_parallel_jobs] [slurm_reservation]"
     echo ""
     echo "Arguments:"
     echo "  input_dataset_path   Path to input dataset directory"
     echo "  output_dataset_path  Path for final output dataset directory"
     echo "  chunk_size          Benchmarks per parallel job (default: $DEFAULT_CHUNK_SIZE)"
     echo "  max_parallel_jobs   Maximum parallel jobs (default: $DEFAULT_MAX_PARALLEL)"
+    echo "  slurm_reservation   Optional SLURM reservation name"
     echo ""
     echo "Example: $0 /path/to/input/dataset /path/to/output/dataset 25 16"
+    echo "Example: $0 /path/to/input/dataset /path/to/output/dataset 25 16 my_reservation"
     exit 1
 fi
 
@@ -32,6 +34,13 @@ INPUT_PATH="$1"
 OUTPUT_PATH="$2"
 CHUNK_SIZE=${3:-$DEFAULT_CHUNK_SIZE}
 MAX_PARALLEL=${4:-$DEFAULT_MAX_PARALLEL}
+RESERVATION="${5:-}"
+
+# Build reservation SBATCH line if provided
+RESERVATION_SBATCH=""
+if [ -n "$RESERVATION" ]; then
+    RESERVATION_SBATCH="#SBATCH --reservation=${RESERVATION}"
+fi
 
 # Validate input path exists
 if [ ! -d "$INPUT_PATH" ]; then
@@ -89,6 +98,7 @@ echo "Total benchmarks: $TOTAL_BENCHMARKS"
 echo "Chunk size: $CHUNK_SIZE benchmarks per job"  
 echo "Array jobs: $NUM_JOBS jobs (0-$((NUM_JOBS-1)))"
 echo "Max parallel: $MAX_PARALLEL jobs"
+[ -n "$RESERVATION" ] && echo "Reservation: $RESERVATION"
 echo "======================================="
 
 # Create the parallel processing job array script
@@ -99,7 +109,7 @@ cat > "$JOB_SCRIPT" << EOF
 
 #SBATCH -J pdecontam_${DATASET_NAME}
 #SBATCH -t 8:00:00
-#SBATCH -A a-infra01-1
+#SBATCH -A infra01
 #SBATCH --output=slurm_logs/pdecontam_${DATASET_NAME}_${TIMESTAMP}_%a.out
 #SBATCH --error=slurm_logs/pdecontam_${DATASET_NAME}_${TIMESTAMP}_%a.out
 #SBATCH --array=0-$((NUM_JOBS-1))%${MAX_PARALLEL}
@@ -107,6 +117,7 @@ cat > "$JOB_SCRIPT" << EOF
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=144
 #SBATCH --partition=normal
+${RESERVATION_SBATCH}
 
 # Set environment variables
 export TOKENIZERS_PARALLELISM=true
@@ -175,6 +186,7 @@ cat > "$MERGE_SCRIPT" << EOF
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=72
 #SBATCH --partition=normal
+${RESERVATION_SBATCH}
 
 echo "=== MERGING PARALLEL DECONTAMINATION RESULTS ==="
 echo "Dataset: ${DATASET_NAME}"

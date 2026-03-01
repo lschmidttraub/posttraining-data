@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Script to submit decontamination SLURM jobs
-# Usage: ./submit_decontamination.sh <input_dataset_path> <output_dataset_path>
+# Usage: ./submit_decontamination.sh <input_dataset_path> <output_dataset_path> [slurm_reservation]
 
 # Get the directory where this script is located
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
@@ -9,15 +9,23 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 REPO_ROOT="$( cd "${SCRIPT_DIR}/.." && pwd )"
 
 # Check if correct number of arguments provided
-if [ $# -ne 2 ]; then
-    echo "Usage: $0 <input_dataset_path> <output_dataset_path>"
+if [ $# -lt 2 ] || [ $# -gt 3 ]; then
+    echo "Usage: $0 <input_dataset_path> <output_dataset_path> [slurm_reservation]"
     echo "Example: $0 /path/to/input/dataset /path/to/output/dataset"
+    echo "Example: $0 /path/to/input/dataset /path/to/output/dataset my_reservation"
     exit 1
 fi
 
 # Get input arguments
 INPUT_PATH="$1"
 OUTPUT_PATH="$2"
+RESERVATION="${3:-}"
+
+# Build reservation SBATCH line if provided
+RESERVATION_SBATCH=""
+if [ -n "$RESERVATION" ]; then
+    RESERVATION_SBATCH="#SBATCH --reservation=${RESERVATION}"
+fi
 
 # Validate input path exists
 if [ ! -d "$INPUT_PATH" ]; then
@@ -45,13 +53,14 @@ cat > "$JOB_SCRIPT" << EOF
 
 #SBATCH -J decontam_${DATASET_NAME}
 #SBATCH -t 12:00:00
-#SBATCH -A a-infra01-1
+#SBATCH -A infra01
 #SBATCH --output=slurm_logs/decontam_${DATASET_NAME}_${TIMESTAMP}.out
 #SBATCH --error=slurm_logs/decontam_${DATASET_NAME}_${TIMESTAMP}.out
 #SBATCH --nodes 1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=288
 #SBATCH --partition=normal
+${RESERVATION_SBATCH}
 
 # Set environment variables
 export TOKENIZERS_PARALLELISM=true
@@ -93,6 +102,7 @@ EOF
 echo "Submitting decontamination job for dataset: $DATASET_NAME"
 echo "Input:  $INPUT_PATH"
 echo "Output: $OUTPUT_PATH"
+[ -n "$RESERVATION" ] && echo "Reservation: $RESERVATION"
 echo "Job script: $JOB_SCRIPT"
 
 sbatch "$JOB_SCRIPT"
