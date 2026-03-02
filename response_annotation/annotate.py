@@ -16,6 +16,7 @@ from prompts import (
     HONESTY_ANNOTATION_PROMPT,
     TRUTHFULNESS_ANNOTATION_PROMPT,
     HELPFULNESS_ANNOTATION_PROMPT,
+    CHARTER_ANNOTATION_PROMPT,
 )
 
 # ==============================================================================
@@ -27,6 +28,7 @@ ASPECT2ANNOTATION_PROMPT = {
     "honesty": HONESTY_ANNOTATION_PROMPT,
     "truthfulness": TRUTHFULNESS_ANNOTATION_PROMPT,
     "helpfulness": HELPFULNESS_ANNOTATION_PROMPT,
+    "charter": CHARTER_ANNOTATION_PROMPT,
 }
 
 # ==============================================================================
