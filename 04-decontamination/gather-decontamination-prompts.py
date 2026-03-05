@@ -14,11 +14,19 @@ Key features:
 - Handles various dataset configurations and splits
 - Outputs unified prompt format for decontamination pipeline
 """
+
 import argparse
 import json
 import os
+import time
 
-from datasets import load_dataset, Dataset, DatasetDict, get_dataset_config_names
+from datasets import (
+    load_dataset,
+    Dataset,
+    DatasetDict,
+    get_dataset_config_names,
+    load_from_disk,
+)
 from pyarrow.lib import ArrowTypeError
 from huggingface_hub import hf_hub_download
 from typing import Iterable
@@ -56,6 +64,154 @@ agieval_datasets = [
 ]
 
 BENCHMARK_DATASETS = [
+    {
+        "name_or_path": "swiss-ai/include-base-new-45",
+        "config_name": "iterate",
+        "split_name": "test",
+        "prompt_col_name": "question",
+    },
+    {
+        "name_or_path": "swiss-ai/switzerland_qa",
+        "config_name": "iterate",
+        "split_name": "test",
+        "prompt_col_name": "question",
+    },
+    {
+        "name_or_path": "swiss-ai/hallulens",
+        "config_name": "iterate",
+        "split_name": "test",
+        "prompt_col_name": "prompt",
+    },
+    {
+        "name_or_path": "EleutherAI/lambada_openai",
+        "config_name": "iterate",
+        "split_name": "test",
+        "prompt_col_name": "text",
+    },
+    {
+        "name_or_path": "baber/piqa",
+        "config_name": None,
+        "split_name": ["train", "test", "validation"],
+        "prompt_col_name": "goal",
+    },
+    {
+        "name_or_path": "HiTZ/truthfulqa-multi",
+        "config_name": "iterate",
+        "split_name": "validation",
+        "prompt_col_name": "question",
+    },
+    {
+        "name_or_path": "allenai/IFBench_test",
+        "config_name": None,
+        "split_name": "train",
+        "prompt_col_name": "prompt",
+    },
+    {
+        "name_or_path": "cais/wmdp",
+        "config_name": "iterate",
+        "split_name": "test",
+        "prompt_col_name": "question",
+    },
+    {
+        "name_or_path": "cambridgeltl/xcopa",
+        "config_name": "iterate",
+        "split_name": ["validation", "test"],
+        "prompt_col_name": "premise",
+    },
+    {
+        "name_or_path": "facebook/xnli",
+        "config_name": [
+            "ar",
+            "bg",
+            "de",
+            "el",
+            "en",
+            "es",
+            "fr",
+            "hi",
+            "ru",
+            "sw",
+            "th",
+            "tr",
+            "ur",
+            "vi",
+            "zh",
+        ],
+        "split_name": "train",
+        "prompt_col_name": "premise",
+    },
+    {
+        "name_or_path": "swiss-ai/polyglotoxicityprompts",
+        "config_name": [
+            "ptp-ar",
+            "ptp-cs",
+            "ptp-de",
+            "ptp-en",
+            "ptp-es",
+            "ptp-fr",
+            "ptp-hi",
+            "ptp-id",
+            "ptp-it",
+            "ptp-ja",
+            "ptp-ko",
+            "ptp-nl",
+            "ptp-pl",
+            "ptp-pt",
+            "ptp-ru",
+            "ptp-sv",
+            "ptp-zh",
+        ],
+        "split_name": "full",
+        "prompt_col_name": "text",
+    },
+    {
+        "name_or_path": "swiss-ai/polyglotoxicityprompts",
+        "config_name": [
+            "wildchat-ar",
+            "wildchat-cs",
+            "wildchat-de",
+            "wildchat-en",
+            "wildchat-es",
+            "wildchat-fr",
+            "wildchat-hi",
+            "wildchat-id",
+            "wildchat-it",
+            "wildchat-ja",
+            "wildchat-ko",
+            "wildchat-nl",
+            "wildchat-pl",
+            "wildchat-pt",
+            "wildchat-ru",
+            "wildchat-sv",
+            "wildchat-zh",
+        ],
+        "split_name": "train",
+        "prompt_col_name": "prompt",
+    },
+    {
+        "name_or_path": "swiss-ai/math_qa",
+        "config_name": None,
+        "split_name": ["train", "test", "validation"],
+        "prompt_col_name": "Problem",
+    },
+    {
+        "name_or_path": "swiss-ai/blend-sample",
+        "config_name": None,
+        "split_name": "test",
+        "prompt_col_name": "prompt",
+    },
+    {
+        "name_or_path": "swiss-ai/mlogiqa",
+        "config_name": "iterate",
+        "split_name": "test",
+        "prompt_col_name": "question",
+    },
+    {
+        "name_or_path": "swiss-ai/realtoxicityprompts",
+        "config_name": "realtoxicityprompts_full",
+        "split_name": "train",
+        "prompt_col_name": "prompt",
+    },
     {
         "name_or_path": "cais/mmlu",
         "config_name": "all",
@@ -98,12 +254,12 @@ BENCHMARK_DATASETS = [
         "split_name": "test",
         "prompt_col_name": "question",
     },
-    {
-        "name_or_path": "include-base_v2",
-        "config_name": "iterate",
-        "split_name": None,
-        "prompt_col_name": "question",
-    },
+    # {
+    #     "name_or_path": "include-base_v2",
+    #     "config_name": "iterate",
+    #     "split_name": None,
+    #     "prompt_col_name": "question",
+    # },
     {
         "name_or_path": "lukaemon/bbh",
         "config_name": "iterate",
@@ -128,12 +284,12 @@ BENCHMARK_DATASETS = [
         "split_name": "test",
         "prompt_col_name": "question",
     },
-    # {
-    #     "name_or_path": "LumiOpen/arc_challenge_mt",
-    #     "config_name": "iterate",
-    #     "split_name": "test",
-    #     "prompt_col_name": "question",
-    # },
+    {
+        "name_or_path": "LumiOpen/arc_challenge_mt",
+        "config_name": "iterate",
+        "split_name": "test",
+        "prompt_col_name": "question",
+    },
     {
         "name_or_path": "alexandrainst/m_arc",
         "config_name": "iterate",
@@ -267,12 +423,6 @@ BENCHMARK_DATASETS = [
         "prompt_col_name": "prompt",
     },
     {
-        "name_or_path": "tatsu-lab/alpaca_eval",
-        "config_name": None,
-        "split_name": "eval",
-        "prompt_col_name": "instruction",
-    },
-    {
         "name_or_path": "toxigen/toxigen-data",
         "config_name": "prompts",
         "split_name": [
@@ -339,8 +489,50 @@ BENCHMARK_DATASETS = [
     },
     {
         "name_or_path": "ToxicityPrompts/PolygloToxicityPrompts",
-        "config_name": "iterate",
+        "config_name": [
+            "ptp-ar",
+            "ptp-cs",
+            "ptp-de",
+            "ptp-en",
+            "ptp-es",
+            "ptp-fr",
+            "ptp-hi",
+            "ptp-id",
+            "ptp-it",
+            "ptp-ja",
+            "ptp-ko",
+            "ptp-nl",
+            "ptp-pl",
+            "ptp-pt",
+            "ptp-ru",
+            "ptp-sv",
+            "ptp-zh",
+        ],
         "split_name": "full",
+        "prompt_col_name": "text",
+    },
+    {
+        "name_or_path": "ToxicityPrompts/PolygloToxicityPrompts",
+        "config_name": [
+            "wildchat-ar",
+            "wildchat-cs",
+            "wildchat-de",
+            "wildchat-en",
+            "wildchat-es",
+            "wildchat-fr",
+            "wildchat-hi",
+            "wildchat-id",
+            "wildchat-it",
+            "wildchat-ja",
+            "wildchat-ko",
+            "wildchat-nl",
+            "wildchat-pl",
+            "wildchat-pt",
+            "wildchat-ru",
+            "wildchat-sv",
+            "wildchat-zh",
+        ],
+        "split_name": "wildchat",
         "prompt_col_name": "prompt",
     },
     {
@@ -362,7 +554,7 @@ BENCHMARK_DATASETS = [
         "prompt_col_name": "prompt_question",
     },
     {
-        "name_or_path": "swissai/harmbench",
+        "name_or_path": "swiss-ai/harmbench",
         "config_name": ["DirectRequest", "HumanJailbreaks"],
         "split_name": "test",
         "prompt_col_name": "Behavior",
@@ -373,6 +565,18 @@ BENCHMARK_DATASETS = [
         "split_name": "train",
         "prompt_col_name": ["en", "zh", "it", "vi", "ar", "ko", "th", "bn", "sw", "jv"],
     },
+    {
+        "name_or_path": "tau/commonsense_qa",
+        "config_name": None,
+        "split_name": ["train", "test", "validation"],
+        "prompt_col_name": "question",
+    },
+    {
+        "name_or_path": "HuggingFaceH4/MATH-500",
+        "config_name": None,
+        "split_name": "test",
+        "prompt_col_name": "problem",
+    },
 ] + agieval_datasets
 
 
@@ -381,23 +585,41 @@ def load_dataset_split(
     config_name,
     split_name,
     prompt_col_name,
+    cache_dir=None,
     num_processes=1,
 ):
     print(
         f"Loading dataset: {dataset_name}, subset: {config_name}, split: {split_name}"
     )
+
     try:
-        dataset = load_dataset(
-            dataset_name,
-            config_name,
-            split=split_name,
-            num_proc=num_processes,
-            trust_remote_code=True,
-        )
+        if cache_dir is not None and os.path.exists(
+            os.path.join(cache_dir, dataset_name)
+        ):
+            print(f"Loading dataset from cache directory {cache_dir}")
+            try:
+                dataset = load_from_disk(
+                    os.path.join(cache_dir, dataset_name, config_name, split_name),
+                )
+            except Exception as e:
+                dataset = load_dataset(
+                    os.path.join(cache_dir, dataset_name),
+                    config_name,
+                    split=split_name,
+                    num_proc=num_processes,
+                    trust_remote_code=True,
+                )
+        else:
+            print(f"Downloading from Hugging Face")
+            dataset = load_dataset(
+                dataset_name,
+                config_name,
+                split=split_name,
+                num_proc=num_processes,
+                trust_remote_code=True,
+            )
         prompts = dataset[prompt_col_name]
-    except (
-        ArrowTypeError
-    ) as e:  # Error with Qwen/P-MMEval - mlogiqa, ID column shards have different dtypes
+    except ArrowTypeError as e:  # Error with Qwen/P-MMEval - mlogiqa, ID column shards have different dtypes
         print("Error while loading: ", e)
         print("Try streaming instead")
         dataset = load_dataset(
@@ -412,11 +634,21 @@ def load_dataset_split(
 
 
 def get_prompts(
-    dataset_name, config_name, split_name, prompt_col_name, num_processes=1
+    dataset_name,
+    config_name,
+    split_name,
+    prompt_col_name,
+    cache_dir=None,
+    num_processes=1,
 ):
     if isinstance(split_name, str):
         prompts = load_dataset_split(
-            dataset_name, config_name, split_name, prompt_col_name, num_processes
+            dataset_name,
+            config_name,
+            split_name,
+            prompt_col_name,
+            cache_dir,
+            num_processes,
         )
         split_names = [split_name] * len(prompts)
     elif isinstance(split_name, Iterable):
@@ -427,6 +659,7 @@ def get_prompts(
                 config_name,
                 s_name,
                 prompt_col_name,
+                cache_dir,
                 num_processes=num_processes,
             )
             prompts.extend(split_prompts)
@@ -470,16 +703,20 @@ def main(args):
                 data = [json.loads(x) for x in f]
             prompts = [x["prompt"] for x in data]
             split_names = ["default" for _ in range(len(prompts))]
-            decontamination_prompts[dataset_name_save] = get_dataset(prompts, split_names)
-        elif dataset_name == "include-base_v2":
-            data_dir = "/capstor/store/cscs/swissai/infra01/posttrain_data/04_decontaminated/include_v2_prompts"
-            filenames = [x for x in os.listdir(data_dir) if x.endswith(".json")]
-            for filename in filenames:
-                with open(os.path.join(data_dir, filename)) as f:
-                    prompts = [x["question"] for x in json.load(f)]
-                language = filename.split(".json")[0]
-                split_names = ["default" for _ in range(len(prompts))]
-                decontamination_prompts[f"include-base_v2__{language}"] = get_dataset(prompts, split_names)
+            decontamination_prompts[dataset_name_save] = get_dataset(
+                prompts, split_names
+            )
+        # elif dataset_name == "include-base_v2":
+        #     data_dir = "/capstor/store/cscs/swissai/infra01/posttrain_data/04_decontaminated/include_v2_prompts"
+        #     filenames = [x for x in os.listdir(data_dir) if x.endswith(".json")]
+        #     for filename in filenames:
+        #         with open(os.path.join(data_dir, filename)) as f:
+        #             prompts = [x["question"] for x in json.load(f)]
+        #         language = filename.split(".json")[0]
+        #         split_names = ["default" for _ in range(len(prompts))]
+        #         decontamination_prompts[f"include-base_v2__{language}"] = get_dataset(
+        #             prompts, split_names
+        #         )
         elif dataset_name == "DAMO-NLP-SG/MultiJail":
             # Needs custom processing as languages are formatted in columns not subsets or splits
             for prompt_col_name in dataset_args["prompt_col_name"]:
@@ -488,6 +725,7 @@ def main(args):
                     dataset_args["config_name"],
                     dataset_args["split_name"],
                     prompt_col_name,
+                    args.cache_dir,
                     args.num_proc,
                 )
                 decontamination_prompts[dataset_name_save + f"__{prompt_col_name}"] = (
@@ -502,15 +740,41 @@ def main(args):
                 dataset_args["config_name"],
                 dataset_args["split_name"],
                 dataset_args["prompt_col_name"],
+                args.cache_dir,
                 args.num_proc,
             )
-            decontamination_prompts[dataset_name_save] = get_dataset(prompts, split_names)
-        else:
-            config_name_list = (
-                get_dataset_config_names(dataset_name)
-                if (dataset_args["config_name"] == "iterate")
-                else dataset_args["config_name"]
+            decontamination_prompts[dataset_name_save] = get_dataset(
+                prompts, split_names
             )
+        else:
+            if dataset_args["config_name"] == "iterate":
+                print(f"Getting config names for dataset {dataset_name}")
+                try:
+                    config_name_list = get_dataset_config_names(dataset_name)
+                except Exception as e:
+                    if args.cache_dir is not None and os.path.exists(
+                        os.path.join(args.cache_dir, dataset_name)
+                    ):
+                        config_name_list = [
+                            d
+                            for d in os.listdir(
+                                os.path.join(args.cache_dir, dataset_name)
+                            )
+                            if os.path.isdir(
+                                os.path.join(args.cache_dir, dataset_name, d)
+                            )
+                        ]
+                    else:
+                        print(
+                            "\033[91m"
+                            + "Error while getting config names: "
+                            + str(e)
+                            + "\033[0m"
+                        )
+                        config_name_list = []
+            else:
+                config_name_list = dataset_args["config_name"]
+
             print(
                 f"Iterating over subsets in the dataset. Config names in the list: {config_name_list}"
             )
@@ -521,12 +785,15 @@ def main(args):
                         config_name,
                         dataset_args["split_name"],
                         dataset_args["prompt_col_name"],
+                        args.cache_dir,
                         args.num_proc,
                     )
-                except (
-                    Exception
-                ) as e:  # Error with INCLUDE (some subsets are empty) or m_hellaswag (errors with the subset ZH)
-                    print(f"Skipping config name {config_name} due to exception {e}")
+                except Exception as e:  # Error with INCLUDE (some subsets are empty) or m_hellaswag (errors with the subset ZH)
+                    print(
+                        "\033[91m"
+                        + f"Skipping config name {config_name} due to exception {e}"
+                        + "\033[0m"
+                    )
                     continue
                 decontamination_prompts[
                     dataset_name_save + f"__{config_name.replace('/', '_')}"
@@ -541,7 +808,7 @@ def main(args):
 
 if __name__ == "__main__":
     """
-    python gather_decontamination_prompts.py --output="/capstor/store/cscs/swissai/infra01/posttrain_data/04_decontaminated/decontamination_prompts"
+    python gather-decontamination-prompts.py --output="/capstor/store/cscs/swissai/infra01/posttrain_data/04_decontaminated/decontamination_prompts"
     """
     parser = argparse.ArgumentParser(description="Gather prompts for decontamination")
     parser.add_argument(
@@ -554,6 +821,12 @@ if __name__ == "__main__":
         type=int,
         default=16,
         help="Number of processes to use for map operations.",
+    )
+    parser.add_argument(
+        "--cache_dir",
+        type=str,
+        default="/iopsstor/scratch/cscs/smarian/datasets/apertus/decontamination_cache",
+        help="Directory to use for caching datasets. The script will try to load from here before downloading.",
     )
     args = parser.parse_args()
     main(args)
