@@ -1,3 +1,9 @@
+"""
+THIS IS NOT THE MAIN SCRIPT TO GATHER THE DECONTAMINATION PROMPTS.
+
+It is only used to download the datasets using the Hugging Face CLI to not have to download each dataset everytime we run gather-decontamination-prompts.py
+"""
+
 import subprocess
 import os
 from pathlib import Path
@@ -454,41 +460,45 @@ BENCHMARK_DATASETS = [
         "split_name": "train",
         "prompt_col_name": "prompt",
     },
+    {
+        "name_or_path": "HuggingFaceH4/mt_bench_prompts",
+        "config_name": None,
+        "split_name": "train",
+        "prompt_col_name": "prompt",
+    },
 ] + agieval_datasets
 
-# Create logs directory
-logs_dir = Path("./logs")
-logs_dir.mkdir(exist_ok=True)
+if __name__ == "__main__":
+    # Create logs directory
+    logs_dir = Path("./logs")
+    logs_dir.mkdir(exist_ok=True)
 
-for dataset in BENCHMARK_DATASETS:
-    dataset_name = dataset["name_or_path"]
+    for dataset in BENCHMARK_DATASETS:
+        dataset_name = dataset["name_or_path"]
+        print(dataset_name)
 
-    if os.path.exists(
-        f"/iopsstor/scratch/cscs/smarian/datasets/apertus/decontamination_cache/{dataset_name}"
-    ):
-        print(f"Dataset {dataset_name} already exists. Skipping download.")
-        continue
+        if os.path.exists(
+            f"/iopsstor/scratch/cscs/smarian/datasets/apertus/decontamination_cache/{dataset_name}"
+        ):
+            print(f"Dataset {dataset_name} already exists. Skipping download.")
+            continue
 
-    print(f"Downloading dataset: {dataset_name}")
-    log_file = logs_dir / f"{dataset_name.replace('/', '_')}.log"
+        print(f"Downloading dataset: {dataset_name}")
+        log_file = logs_dir / f"{dataset_name.replace('/', '_')}.log"
 
-    with open(log_file, "w") as f:
-        env = os.environ.copy()
-        env["HF_TOKEN"] = os.getenv("HF_TOKEN")
+        with open(log_file, "w") as f:
+            subprocess.run(
+                [
+                    "huggingface-cli",
+                    "download",
+                    dataset_name,
+                    "--repo-type",
+                    "dataset",
+                    "--local-dir",
+                    f"/iopsstor/scratch/cscs/smarian/datasets/apertus/decontamination_cache/{dataset_name}",
+                ],
+                stdout=f,
+                stderr=subprocess.STDOUT,
+            )
 
-        subprocess.run(
-            [
-                "huggingface-cli",
-                "download",
-                dataset_name,
-                "--repo-type",
-                "dataset",
-                "--local-dir",
-                f"/iopsstor/scratch/cscs/smarian/datasets/apertus/decontamination_cache/{dataset_name}",
-            ],
-            stdout=f,
-            stderr=subprocess.STDOUT,
-            env=env,
-        )
-
-    time.sleep(15)  # Sleep for a short time to avoid overwhelming the Hugging Face API
+        time.sleep(15)  # Sleep for a short time to avoid overwhelming the Hugging Face API
