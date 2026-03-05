@@ -1,33 +1,35 @@
 #!/bin/bash
 
-# Format: "ModelName TotalNodes Workers NodesPerWorker DP TP DisableOCF(true/false)"
+# Format: "ModelName TotalNodes Workers NodesPerWorker DP TP DisableOCF(true/false) Framework NoReasoningKwargs(true/false)"
 JOBS=(
-    "Qwen/Qwen2.5-0.5B-Instruct 1 1 1 4 1 false sglang"
-    "Qwen/Qwen2.5-1.5B-Instruct 1 1 1 4 1 false sglang"
-    "Qwen/Qwen3-0.6B 1 1 1 4 1 false sglang"
-    "Qwen/Qwen3-1.7B 1 1 1 4 1 false sglang"
-    "Qwen/Qwen3-4B-Instruct-2507 1 1 1 4 1 false sglang"
-    "Qwen/Qwen3-8B 1 1 1 4 1 false sglang"
-    "Qwen/Qwen3-32B 1 1 1 4 1 false sglang"
-    "Qwen/Qwen3-30B-A3B-Instruct-2507 1 1 1 1 4 false sglang"
-    "Qwen/Qwen3-Omni-30B-A3B-Instruct 1 1 1 1 4 false sglang"
-    "Qwen/Qwen3-Next-80B-A3B-Instruct 1 1 1 1 4 false sglang"
-    "Qwen/Qwen3-235B-A22B-Instruct-2507 8 4 2 1 8 true sglang"
-    "microsoft/Phi-4-mini-instruct 1 1 1 4 1 false sglang"
-    "mistralai/Mistral-Small-24B-Instruct-2501 1 1 1 1 4 false sglang"
-    "mistralai/Mixtral-8x22B-Instruct-v0.1 2 1 2 1 8 true sglang"
-    "mistralai/Ministral-3-3B-Instruct-2512 1 1 1 4 1 false vllm"
-    "mistralai/Ministral-3-8B-Instruct-2512 1 1 1 4 1 false vllm"
-    "mistralai/Ministral-3-14B-Instruct-2512 1 1 1 4 1 false vllm"
-    "arcee-ai/Trinity-Mini 1 1 1 4 1 false vllm"
-    "arcee-ai/Trinity-Nano-Preview 1 1 1 4 1 false vllm"
-    "HuggingFaceTB/SmolLM3-3B 1 1 1 4 1 false sglang"
-    "utter-project/EuroLLM-1.7B-Instruct 1 1 1 4 1 false sglang"
-    "utter-project/EuroLLM-9B-Instruct-2512 1 1 1 4 1 false sglang"
-    "utter-project/EuroLLM-22B-Instruct-2512 1 1 1 4 1 false sglang"
+    "Qwen/Qwen2.5-0.5B-Instruct 1 1 1 4 1 false sglang false"
+    "Qwen/Qwen2.5-1.5B-Instruct 1 1 1 4 1 false sglang false"
+    "Qwen/Qwen3-0.6B 1 1 1 4 1 false sglang false"
+    "Qwen/Qwen3-1.7B 1 1 1 4 1 false sglang false"
+    "Qwen/Qwen3-4B-Instruct-2507 1 1 1 4 1 false sglang false"
+    "Qwen/Qwen3-8B 1 1 1 4 1 false sglang false"
+    "Qwen/Qwen3-32B 1 1 1 4 1 false sglang false"
+    "Qwen/Qwen3-30B-A3B-Instruct-2507 1 1 1 1 4 false sglang false"
+    "Qwen/Qwen3-Omni-30B-A3B-Instruct 1 1 1 1 4 false sglang false"
+    "Qwen/Qwen3-Next-80B-A3B-Instruct 1 1 1 1 4 false sglang false"
+    "Qwen/Qwen3-235B-A22B-Instruct-2507 16 8 2 1 8 true sglang false"
+    "microsoft/Phi-4-mini-instruct 1 1 1 4 1 false sglang false"
+    "mistralai/Mistral-Small-24B-Instruct-2501 1 1 1 1 4 false sglang false"
+    "mistralai/Mixtral-8x22B-Instruct-v0.1 2 1 2 1 8 true sglang false"
+    "mistralai/Ministral-3-3B-Instruct-2512 1 1 1 4 1 false vllm true"
+    "mistralai/Ministral-3-8B-Instruct-2512 1 1 1 4 1 false vllm true"
+    "mistralai/Ministral-3-14B-Instruct-2512 1 1 1 4 1 false vllm true"
+    "arcee-ai/Trinity-Mini 1 1 1 4 1 false vllm false"
+    "arcee-ai/Trinity-Nano-Preview 1 1 1 4 1 false vllm false"
+    "HuggingFaceTB/SmolLM3-3B 1 1 1 4 1 false sglang false"
+    "utter-project/EuroLLM-1.7B-Instruct 1 1 1 4 1 false sglang false"
+    "utter-project/EuroLLM-9B-Instruct-2512 1 1 1 4 1 false sglang false"
+    "utter-project/EuroLLM-22B-Instruct-2512 1 1 1 4 1 false sglang false"
+    "Qwen/Qwen3.5-397B-A17B 2 1 2 1 8 true vllm false"
+    "mistralai/Mistral-Large-3-675B-Instruct-2512 32 8 4 1 16 true vllm true"
 )
 
-BASE_OUTPUT_DIR="./datasets/inference"
+BASE_OUTPUT_DIR="./datasets/vaaax2"
 JOB_TIME="12:00:00"
 
 ACCOUNT="infra01"
@@ -37,11 +39,14 @@ WORKING_DIR="$SCRATCH/posttraining-data/response_generation"
 mkdir -p ./logs/generation
 
 for ENTRY in "${JOBS[@]}"; do
-    read -r MODEL NNODES WORKERS NPW DP TP DOCF FRAMEWORK <<< "$ENTRY"
+    read -r MODEL NNODES WORKERS NPW DP TP DOCF FRAMEWORK NO_REASONING <<< "$ENTRY"
     SAFE_MODEL_NAME=$(echo "$MODEL" | tr '/' '_')
 
     OCF_FLAG=""
     if [ "$DOCF" = "true" ]; then OCF_FLAG="--disable-ocf"; fi
+
+    REASONING_FLAG=""
+    if [ "$NO_REASONING" = "true" ]; then REASONING_FLAG="--no-reasoning-kwargs"; fi
 
     env -i PATH=$PATH HOME=$HOME TERM=$TERM USER=$USER LOGNAME=$USER SCRATCH=$SCRATCH \
     sbatch <<EOF
@@ -68,7 +73,7 @@ srun --environment=activeuf --container-writable --container-workdir="${WORKING_
     --dp-size ${DP} \\
     --tp-size ${TP} \\
     --framework '${FRAMEWORK}' \\
-    ${OCF_FLAG}"
+    ${OCF_FLAG} ${REASONING_FLAG}"
 EOF
 done
 

@@ -19,6 +19,7 @@ def main():
     parser.add_argument("--tp-size", type=int, default=1)
     parser.add_argument("--disable-ocf", action="store_true", help="Disable OCF optimization")
     parser.add_argument("--framework", type=str, default="sglang", help="Serving framework (e.g., sglang, vllm)")
+    parser.add_argument("--no-reasoning-kwargs", action="store_true", help="Disable passing chat_template_kwargs for reasoning")
     
     parser.add_argument("--base-url", type=str, help="Base URL for the model server (overrides auto-discovery)", required=False)
 
@@ -39,7 +40,8 @@ def main():
             submit_cmd.extend([
                 "--workers", str(args.workers),
                 "--nodes-per-worker", str(args.nodes_per_worker),
-                "--use-router"
+                "--use-router",
+                "--router-environment", f"{scratch}/model-launch/serving/envs/sglang.toml",
             ])
 
         if args.disable_ocf:
@@ -106,7 +108,10 @@ def main():
         time.sleep(10)
 
     output_dir = os.path.join(args.base_output_dir, model_short)
-    subprocess.run(["python", "generate.py", "--dataset-path", args.dataset, "--output-dir", output_dir, "--model", args.model, "--base-url", base_url], check=True)
+    gen_cmd = ["python", "generate.py", "--dataset-path", args.dataset, "--output-dir", output_dir, "--model", args.model, "--base-url", base_url]
+    if args.no_reasoning_kwargs:
+        gen_cmd.append("--no-reasoning-kwargs")
+    subprocess.run(gen_cmd, check=True)
     
     subprocess.run(["scancel", job_id])
 

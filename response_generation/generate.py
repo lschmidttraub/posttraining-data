@@ -9,6 +9,29 @@ from datasets import load_from_disk, load_dataset
 from transformers import AutoTokenizer
 from tqdm.asyncio import tqdm_asyncio
 
+def sanitize_messages(messages):
+    """Strip all non-standard fields from messages to avoid vLLM/Mistral validation errors."""
+    # Standard OpenAI chat message fields per role
+    ALLOWED_KEYS = {
+        "system": {"role", "content", "name"},
+        "user": {"role", "content", "name"},
+        "assistant": {"role", "content", "name", "tool_calls", "refusal"},
+        "tool": {"role", "content", "tool_call_id"},
+    }
+    DEFAULT_ALLOWED = {"role", "content", "name"}
+    
+    sanitized = []
+    for msg in messages:
+        role = msg.get("role", "user")
+        allowed = ALLOWED_KEYS.get(role, DEFAULT_ALLOWED)
+        clean_msg = {k: v for k, v in msg.items() if k in allowed and v is not None}
+        # Ensure role and content are always present
+        clean_msg["role"] = role
+        if "content" not in clean_msg:
+            clean_msg["content"] = msg.get("content", "")
+        sanitized.append(clean_msg)
+    return sanitized
+
 async def writer_task(queue, filepath):
     """Listens to the queue and writes outputs to the JSONL file immediately."""
     with open(filepath, "a", encoding="utf-8") as f:
@@ -20,17 +43,23 @@ async def writer_task(queue, filepath):
             f.flush() # Ensure it's immediately written to disk
             queue.task_done()
 
-async def get_response(idx, prompt, client, model, max_length, temperature, semaphore, queue):
+async def get_response(idx, prompt, client, model, max_length, temperature, semaphore, queue, use_reasoning=True):
     """Fetches the response and immediately puts it in the write queue."""
     async with semaphore:
         try:
-            res = await client.chat.completions.create(
+            # Sanitize messages to avoid Mistral tokenizer tool_calls issues
+            prompt = sanitize_messages(prompt)
+            
+            kwargs = dict(
                 model=model,
                 messages=prompt,
                 max_tokens=max_length,
                 temperature=temperature,
-                extra_body={"chat_template_kwargs": {"enable_thinking": False}},
             )
+            if use_reasoning:
+                kwargs["extra_body"] = {"chat_template_kwargs": {"enable_thinking": False}}
+            
+            res = await client.chat.completions.create(**kwargs)
             content = res.choices[0].message.content
         except Exception as e:
             print(f"Error for index {idx}: {e}")
@@ -120,8 +149,9 @@ async def main(args):
 
     # 6. Create and Run Tasks
     print(f"🚀 Processing {len(valid_indices)} prompts...")
+    use_reasoning = not args.no_reasoning_kwargs
     tasks = [
-        get_response(idx, all_prompts[idx], client, args.model, args.max_length, args.temperature, semaphore, queue) 
+        get_response(idx, all_prompts[idx], client, args.model, args.max_length, args.temperature, semaphore, queue, use_reasoning) 
         for idx in valid_indices
     ]
     
@@ -170,6 +200,7 @@ if __name__ == "__main__":
     parser.add_argument("--concurrent", type=int, default=5000)
     parser.add_argument("--base-url", type=str, default="https://serving.swissai.cscs.ch/")
     parser.add_argument("--temperature", type=float, default=1.0)
+    parser.add_argument("--no-reasoning-kwargs", action="store_true", help="Disable passing chat_template_kwargs (needed for Mistral tokenizers)")
     args = parser.parse_args()
 
     asyncio.run(main(args))
