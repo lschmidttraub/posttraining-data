@@ -116,8 +116,12 @@ async def main(args):
         return
 
     # 4. Extract and Filter Prompts
-    print(f"Extracting prompts from {len(dataset)} samples...")
-    all_prompts = [sample["chosen"][:-1] for sample in dataset]
+    all_prompts = dataset[args.prompt_column_name]
+    if isinstance(all_prompts[0], str):
+        all_prompts = [[{"role": "user", "content": p}] for p in all_prompts]
+    if args.remove_last_message:
+        print("⚠️ Removing last message from each prompt as per --remove-last-message flag.")
+        all_prompts = [p[:-1] if len(p) > 1 else p for p in all_prompts]
     
     valid_indices = []
     if args.max_tokens is not None:
@@ -191,6 +195,8 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset-path", type=str, required=True)
+    parser.add_argument("--prompt-column-name", type=str, default="prompt", help="Name of the column containing the prompt/messages")
+    parser.add_argument("--remove-last-message", action="store_true", help="Whether to remove the last message from the conversation history, e.g. if you take it from a 'chosen' column")
     parser.add_argument("--output-dir", type=str, required=True)
     parser.add_argument("--model", type=str, required=True)
     parser.add_argument("--max-tokens", type=int, default=None)

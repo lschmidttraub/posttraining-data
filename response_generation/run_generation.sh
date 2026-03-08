@@ -32,6 +32,8 @@ JOBS=(
 
 INPUT_DATASET="allenai/Dolci-Instruct-DPO"
 BASE_OUTPUT_DIR="./datasets/vaaax2"
+PROMPT_COLUMN_NAME="chosen"
+REMOVE_LAST_MESSAGE=1  # Set to 1 if you want to remove the last message from the conversation history, e.g. if you take it from a "chosen" column
 JOB_TIME="12:00:00"
 
 ACCOUNT="infra01"
@@ -51,6 +53,9 @@ for ENTRY in "${JOBS[@]}"; do
     REASONING_FLAG=""
     if [ "$NO_REASONING" = "true" ]; then REASONING_FLAG="--no-reasoning-kwargs"; fi
 
+    REMOVE_LAST_MESSAGE_FLAG=""
+    if [ "$REMOVE_LAST_MESSAGE" -eq 1 ]; then REMOVE_LAST_MESSAGE_FLAG="--remove-last-message"; fi
+
     sbatch <<EOF
 #!/bin/bash
 #SBATCH --job-name=gen_${SAFE_MODEL_NAME}
@@ -68,6 +73,7 @@ cd ${WORKING_DIR}
 srun --environment=activeuf --container-writable --container-workdir="${WORKING_DIR}" \\
     bash -c "unset SSL_CERT_FILE && python -u run_generation.py \\
     --dataset '${INPUT_DATASET}' \\
+    --prompt-column-name '${PROMPT_COLUMN_NAME}' \\
     --base-output-dir '${BASE_OUTPUT_DIR}' \\
     --logs-dir '${LOGS_DIR}/server' \\
     --model '${MODEL}' \\
@@ -77,7 +83,7 @@ srun --environment=activeuf --container-writable --container-workdir="${WORKING_
     --dp-size ${DP} \\
     --tp-size ${TP} \\
     --framework '${FRAMEWORK}' \\
-    ${OCF_FLAG} ${REASONING_FLAG}"
+    ${OCF_FLAG} ${REASONING_FLAG} ${REMOVE_LAST_MESSAGE_FLAG}"
 EOF
 done
 

@@ -9,6 +9,8 @@ def main():
     parser = argparse.ArgumentParser(description="Orchestrate SGLang server and Generation")
     parser.add_argument("--model", type=str, required=True)
     parser.add_argument("--dataset", type=str, default="allenai/Dolci-Instruct-DPO")
+    parser.add_argument("--prompt-column-name", type=str, default="prompt", help="Name of the column in the dataset that contains the prompts")
+    parser.add_argument("--remove-last-message", action="store_true", help="Whether to remove the last message from the conversation history")
     parser.add_argument("--base-output-dir", type=str, default="./output")
     parser.add_argument("--logs-dir", type=str, default="./logs")
     parser.add_argument("--job-time", type=str, default="12:00:00")
@@ -109,7 +111,7 @@ def main():
         time.sleep(10)
 
     output_dir = os.path.join(args.base_output_dir, model_short)
-    gen_cmd = ["python", "generate.py", "--dataset-path", args.dataset, "--output-dir", output_dir, "--model", args.model, "--base-url", base_url]
+    gen_cmd = ["python", "generate.py", "--dataset-path", args.dataset, "--prompt-column-name", args.prompt_column_name, "--remove-last-message" if args.remove_last_message else "", "--output-dir", output_dir, "--model", args.model, "--base-url", base_url]
     if args.no_reasoning_kwargs:
         gen_cmd.append("--no-reasoning-kwargs")
     subprocess.run(gen_cmd, check=True)
