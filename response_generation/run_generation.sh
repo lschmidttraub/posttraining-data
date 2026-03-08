@@ -29,14 +29,17 @@ JOBS=(
     "mistralai/Mistral-Large-3-675B-Instruct-2512 32 8 4 1 16 true vllm true"
 )
 
+
+INPUT_DATASET="allenai/Dolci-Instruct-DPO"
 BASE_OUTPUT_DIR="./datasets/vaaax2"
 JOB_TIME="12:00:00"
 
 ACCOUNT="infra01"
 RESERVATION="PA-2338-RL"
 WORKING_DIR="$SCRATCH/posttraining-data/response_generation"
+LOGS_DIR="/users/smarian/projects/posttraining-data/logs/generation"
 
-mkdir -p ./logs/generation
+mkdir -p $LOGS_DIR
 
 for ENTRY in "${JOBS[@]}"; do
     read -r MODEL NNODES WORKERS NPW DP TP DOCF FRAMEWORK NO_REASONING <<< "$ENTRY"
@@ -48,12 +51,11 @@ for ENTRY in "${JOBS[@]}"; do
     REASONING_FLAG=""
     if [ "$NO_REASONING" = "true" ]; then REASONING_FLAG="--no-reasoning-kwargs"; fi
 
-    env -i PATH=$PATH HOME=$HOME TERM=$TERM USER=$USER LOGNAME=$USER SCRATCH=$SCRATCH \
     sbatch <<EOF
 #!/bin/bash
 #SBATCH --job-name=gen_${SAFE_MODEL_NAME}
 #SBATCH --account=${ACCOUNT}
-#SBATCH --output=./logs/generation/${SAFE_MODEL_NAME}_%j.log
+#SBATCH --output=${LOGS_DIR}/client/${SAFE_MODEL_NAME}_%j.log
 #SBATCH --time=${JOB_TIME}
 #SBATCH --reservation=${RESERVATION}                 # Uncomment if you have a reservation to use
 #SBATCH --partition=normal
@@ -65,7 +67,9 @@ cd ${WORKING_DIR}
 # Using --container-workdir to chdir inside the container as well
 srun --environment=activeuf --container-writable --container-workdir="${WORKING_DIR}" \\
     bash -c "unset SSL_CERT_FILE && python -u run_generation.py \\
+    --dataset '${INPUT_DATASET}' \\
     --base-output-dir '${BASE_OUTPUT_DIR}' \\
+    --logs-dir '${LOGS_DIR}/server' \\
     --model '${MODEL}' \\
     --slurm-nodes ${NNODES} \\
     --workers ${WORKERS} \\
