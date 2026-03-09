@@ -40,24 +40,30 @@ DATASETS=(
 )
 
 BASE_OUTPUT_DIR="$SCRATCH/posttraining-data/response_annotation/datasets/inference_results_final"
+PROMPT_COLUMN_NAME="chosen"
+REMOVE_LAST_MESSAGE=1  # Set to 1 if you want to remove the last message from the conversation history, e.g. if you take it from a "chosen" column
 JOB_TIME="12:00:00"
 
 ACCOUNT="infra01"
 RESERVATION="PA-2338-RL"
-WORKING_DIR="$SCRATCH/posttraining-data/response_annotation"
+REMOVE_LAST_MESSAGE_FLAG=""
+if [ "$REMOVE_LAST_MESSAGE" -eq 1 ]; then REMOVE_LAST_MESSAGE_FLAG="--remove-last-message"; fi
 
-mkdir -p ./logs/annotation
+WORKING_DIR="$SCRATCH/posttraining-data/response_annotation"
+LOGS_DIR="./logs/annotation"
+
+
+mkdir -p $LOGS_DIR
 
 for DATASET_PATH in "${DATASETS[@]}"; do
     # Extract just the folder name of the dataset for cleaner job names and logs
     SAFE_DATASET_NAME=$(basename "$DATASET_PATH")
 
-    env -i PATH=$PATH HOME=$HOME TERM=$TERM USER=$USER LOGNAME=$USER SCRATCH=$SCRATCH \
     sbatch <<EOF
 #!/bin/bash
 #SBATCH --job-name=ann_${SAFE_DATASET_NAME}
 #SBATCH --account=${ACCOUNT}
-#SBATCH --output=./logs/annotation/${SAFE_DATASET_NAME}_%j.log
+#SBATCH --output=${LOGS_DIR}/${SAFE_DATASET_NAME}_%j.log
 #SBATCH --time=${JOB_TIME}
 #SBATCH --reservation=${RESERVATION}                 # Uncomment if you have a reservation to use
 #SBATCH --partition=normal
@@ -70,7 +76,9 @@ cd ${WORKING_DIR}
 srun --environment=activeuf --container-writable --container-workdir="${WORKING_DIR}" \\
     bash -c "unset SSL_CERT_FILE && python -u run_annotation.py \\
     --base-output-dir '${BASE_OUTPUT_DIR}' \\
+    --logs-dir '${LOGS_DIR}' \\
     --dataset '${DATASET_PATH}' \\
+    --prompt-column-name '${PROMPT_COLUMN_NAME}' \\
     --model '${MODEL}' \\
     --slurm-nodes ${NNODES} \\
     --workers ${WORKERS} \\
@@ -78,7 +86,8 @@ srun --environment=activeuf --container-writable --container-workdir="${WORKING_
     --dp-size ${DP} \\
     --tp-size ${TP} \\
     --framework '${FRAMEWORK}' \\
-    ${OCF_FLAG}"
+    --reservation '${RESERVATION}' \\
+    ${OCF_FLAG} ${REMOVE_LAST_MESSAGE_FLAG}"
 EOF
 done
 
