@@ -86,7 +86,6 @@ srun --environment=activeuf --container-writable --container-workdir="${WORKING_
     --dp-size ${DP} \\
     --tp-size ${TP} \\
     --framework '${FRAMEWORK}' \\
-    --reservation '${RESERVATION}' \\
     ${OCF_FLAG} ${REMOVE_LAST_MESSAGE_FLAG}"
 EOF
 done
