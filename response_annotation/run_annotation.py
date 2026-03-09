@@ -77,7 +77,7 @@ def main():
 
     print(f"✅ Found Job ID: {job_id}")
         
-    log_file = f"./logs/{job_id}/log.out"
+    log_file = f"{args.logs_dir}/logs/{job_id}/log.out"
     base_url = None
     target_prefix = "Router URL: " if args.workers > 1 else "All worker URLs: "
 
