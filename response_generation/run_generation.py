@@ -111,7 +111,17 @@ def main():
         time.sleep(10)
 
     output_dir = os.path.join(args.base_output_dir, model_short)
-    gen_cmd = ["python", "generate.py", "--dataset-path", args.dataset, "--prompt-column-name", args.prompt_column_name, "--remove-last-message" if args.remove_last_message else "", "--output-dir", output_dir, "--model", args.model, "--base-url", base_url]
+    gen_cmd = [
+        "python", "generate.py",
+        "--dataset-path", args.dataset,
+        "--prompt-column-name", args.prompt_column_name,
+        "--output-dir", output_dir,
+        "--model", args.model,
+        "--base-url", base_url,
+        "--retry-existing",
+    ]
+    if args.remove_last_message:
+        gen_cmd.append("--remove-last-message")
     if args.no_reasoning_kwargs:
         gen_cmd.append("--no-reasoning-kwargs")
     subprocess.run(gen_cmd, check=True)

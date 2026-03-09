@@ -9,6 +9,10 @@ from datasets import load_from_disk, load_dataset
 from transformers import AutoTokenizer
 from tqdm.asyncio import tqdm_asyncio
 
+def has_saved_response(response):
+    """Return True when a saved response contains non-whitespace text."""
+    return isinstance(response, str) and bool(response.strip())
+
 def sanitize_messages(messages):
     """Strip all non-standard fields from messages to avoid vLLM/Mistral validation errors."""
     # Standard OpenAI chat message fields per role
@@ -99,15 +103,31 @@ async def main(args):
     os.makedirs(args.output_dir, exist_ok=True)
     output_jsonl = os.path.join(args.output_dir, "responses.jsonl")
 
-    # 3. Fast Resume logic (Read existing JSONL)
-    processed_indices = set()
+    # 3. Fast Resume logic (Read existing outputs)
+    existing_responses = {}
     if os.path.exists(output_jsonl):
         with open(output_jsonl, "r", encoding="utf-8") as f:
             for line in f:
                 if line.strip():
                     data = json.loads(line)
-                    processed_indices.add(data["index"])
-        print(f"✅ Resuming from checkpoint: Found {len(processed_indices)} already processed items.")
+                    existing_responses[data["index"]] = data.get("response", "")
+        print(f"✅ Resuming from checkpoint: Found {len(existing_responses)} saved items in responses.jsonl.")
+    elif args.retry_existing and "response" in dataset.column_names:
+        existing_responses = {
+            idx: response
+            for idx, response in enumerate(dataset["response"])
+        }
+        print(f"✅ Found {len(existing_responses)} saved items in the dataset response column.")
+
+    processed_indices = set(existing_responses)
+    empty_response_indices = {
+        idx for idx, response in existing_responses.items()
+        if not has_saved_response(response)
+    }
+
+    if args.retry_existing and empty_response_indices:
+        processed_indices -= empty_response_indices
+        print(f"🔁 Retrying {len(empty_response_indices)} items with empty saved responses.")
 
     if len(processed_indices) >= len(dataset):
         print("Already finished processing the entire dataset.")
@@ -176,13 +196,18 @@ async def main(args):
     print(f"💾 Reconstructing and saving final dataset to {args.output_dir}")
     
     # Load everything back into ordered memory just once at the end
-    final_responses = [""] * len(dataset)
+    if "response" in dataset.column_names:
+        final_responses = list(dataset["response"])
+    else:
+        final_responses = [""] * len(dataset)
     with open(output_jsonl, "r", encoding="utf-8") as f:
         for line in f:
             if line.strip():
                 data = json.loads(line)
                 final_responses[data["index"]] = data["response"]
 
+    if "response" in dataset.column_names:
+        dataset = dataset.remove_columns("response")
     dataset = dataset.add_column("response", final_responses)
     dataset.save_to_disk(args.output_dir)
 
@@ -207,6 +232,7 @@ if __name__ == "__main__":
     parser.add_argument("--base-url", type=str, default="https://serving.swissai.cscs.ch/")
     parser.add_argument("--temperature", type=float, default=1.0)
     parser.add_argument("--no-reasoning-kwargs", action="store_true", help="Disable passing chat_template_kwargs (needed for Mistral tokenizers)")
+    parser.add_argument("--retry-existing", action="store_true", help="Retry samples whose saved response is empty in responses.jsonl or an existing response column")
     args = parser.parse_args()
 
     asyncio.run(main(args))
