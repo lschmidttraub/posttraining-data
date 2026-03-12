@@ -95,7 +95,7 @@ async def main(args):
         dataset = load_from_disk(args.dataset_path)
     else:
         dataset = load_dataset(args.dataset_path, split="train")
-
+    dataset = dataset.select(range(10000))
     os.makedirs(args.output_dir, exist_ok=True)
     output_jsonl = os.path.join(args.output_dir, "responses.jsonl")
 
@@ -187,6 +187,7 @@ async def main(args):
 
 if __name__ == "__main__":
     # Install uvloop for maximum performance before anything else
+    # python generate.py --dataset-path=allenai/Dolci-Instruct-DPO --output-dir=./datasets/tmpbax3 --model=moonshotai/Kimi-K2.5-dmelikidze --concurrent=250 --base-url=http://172.28.33.32:8080/v1
     uvloop.install()
 
     parser = argparse.ArgumentParser()
@@ -197,7 +198,7 @@ if __name__ == "__main__":
     parser.add_argument("--max-length", type=int, default=4096)
     
     # Increased default concurrency to better saturate the 16 nodes
-    parser.add_argument("--concurrent", type=int, default=5000)
+    parser.add_argument("--concurrent", type=int, default=2000)
     parser.add_argument("--base-url", type=str, default="https://serving.swissai.cscs.ch/")
     parser.add_argument("--temperature", type=float, default=1.0)
     parser.add_argument("--no-reasoning-kwargs", action="store_true", help="Disable passing chat_template_kwargs (needed for Mistral tokenizers)")

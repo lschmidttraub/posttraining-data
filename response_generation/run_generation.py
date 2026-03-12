@@ -20,6 +20,7 @@ def main():
     parser.add_argument("--disable-ocf", action="store_true", help="Disable OCF optimization")
     parser.add_argument("--framework", type=str, default="sglang", help="Serving framework (e.g., sglang, vllm)")
     parser.add_argument("--no-reasoning-kwargs", action="store_true", help="Disable passing chat_template_kwargs for reasoning")
+    parser.add_argument("--env", type=str, help="Optional environment name for job submission (e.g., vllm_qwen35)", required=False)
     
     parser.add_argument("--base-url", type=str, help="Base URL for the model server (overrides auto-discovery)", required=False)
 
@@ -33,9 +34,16 @@ def main():
             "--slurm-time", args.job_time,
             "--serving-framework", args.framework,
             "--worker-port", "8080",
-            "--slurm-environment", f"{scratch}/model-launch/serving/envs/{args.framework}.toml",
         ]
-        
+        if args.env:
+            submit_cmd.extend([
+                "--slurm-environment", f"{scratch}/model-launch/serving/envs/{args.env}.toml"
+            ])
+        else:
+            submit_cmd.extend([
+                "--slurm-environment", f"{scratch}/model-launch/serving/envs/{args.framework}.toml"
+            ])
+            
         if args.workers > 1:
             submit_cmd.extend([
                 "--workers", str(args.workers),
