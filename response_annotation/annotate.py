@@ -12,11 +12,15 @@ from tqdm.asyncio import tqdm_asyncio
 # Import your system prompts from the external file
 from prompts import (
     PREFERENCE_ANNOTATION_SYSTEM_PROMPT,
+    PREFERENCE_ANNOTATION_0_TO_9_SYSTEM_PROMPT,
+
     INSTRUCTION_FOLLOWING_ANNOTATION_PROMPT,
     HONESTY_ANNOTATION_PROMPT,
     TRUTHFULNESS_ANNOTATION_PROMPT,
     HELPFULNESS_ANNOTATION_PROMPT,
     CHARTER_ANNOTATION_PROMPT,
+    
+    HELPFULNESS_ANNOTATION_0_TO_9_PROMPT,
 )
 
 # ==============================================================================
@@ -24,12 +28,21 @@ from prompts import (
 # ==============================================================================
 
 ASPECT2ANNOTATION_PROMPT = {
-    "instruction_following": INSTRUCTION_FOLLOWING_ANNOTATION_PROMPT,
-    "honesty": HONESTY_ANNOTATION_PROMPT,
-    "truthfulness": TRUTHFULNESS_ANNOTATION_PROMPT,
-    "helpfulness": HELPFULNESS_ANNOTATION_PROMPT,
-    "charter": CHARTER_ANNOTATION_PROMPT,
+    # "instruction_following": INSTRUCTION_FOLLOWING_ANNOTATION_PROMPT,
+    # "honesty": HONESTY_ANNOTATION_PROMPT,
+    # "truthfulness": TRUTHFULNESS_ANNOTATION_PROMPT,
+    # "helpfulness": HELPFULNESS_ANNOTATION_PROMPT,
+    # "charter": CHARTER_ANNOTATION_PROMPT,
+
+    "helpfulness": HELPFULNESS_ANNOTATION_0_TO_9_PROMPT,
 }
+
+# ==============================================================================
+# SCORING RANGE
+# ==============================================================================
+
+# SCORING_RANGE = [str(i) for i in range(1, 5)]
+SCORING_RANGE = [str(i) for i in range(0, 10)]
 
 # ==============================================================================
 # PIPELINE LOGIC
@@ -56,7 +69,7 @@ def format_prompt_input(prompt_data):
 
     return str(prompt_data)
 
-def extract_probabilities(res, target_words=["1", "2", "3", "4", "5"]):
+def extract_probabilities(res, target_words=SCORING_RANGE):
     """Extracts normalized logprobs from the OpenAI API response."""
     try:
         first_token_logprobs = res.choices[0].logprobs.content[0].top_logprobs
@@ -102,7 +115,7 @@ async def get_aspect_annotation(client, model, messages, temperature, semaphore)
             return extract_probabilities(res)
         except Exception as e:
             print(f"Error fetching annotation: {e}")
-            return {w: 0.0 for w in ["1", "2", "3", "4", "5"]}
+            return {w: 0.0 for w in SCORING_RANGE}
 
 async def annotate_sample(idx, prompt_data, response_text, client, model, temperature, semaphore, queue):
     """Evaluates all 4 aspects of a single completion concurrently."""
@@ -118,7 +131,7 @@ async def annotate_sample(idx, prompt_data, response_text, client, model, temper
             completion=response_text
         )
         messages = [
-            {"role": "system", "content": PREFERENCE_ANNOTATION_SYSTEM_PROMPT},
+            {"role": "system", "content": PREFERENCE_ANNOTATION_0_TO_9_SYSTEM_PROMPT},
             {"role": "user", "content": user_prompt}
         ]
         tasks.append(get_aspect_annotation(client, model, messages, temperature, semaphore))
