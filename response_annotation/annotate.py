@@ -189,12 +189,18 @@ async def main(args):
     
     writer = asyncio.create_task(writer_task(queue, output_jsonl))
 
+    prompts = dataset[args.prompt_column_name]
+    if isinstance(prompts[0], str):
+        prompts = [[{"role": "user", "content": p}] for p in prompts]
+    if args.remove_last_message:
+        print("⚠️ Removing last message from each prompt as per --remove-last-message flag.")
+        prompts = [p[:-1] if len(p) > 1 else p for p in prompts]
     print(f"🚀 Annotating {len(valid_indices)} responses...")
     
     tasks = [
         annotate_sample(
             idx=idx, 
-            prompt_data=dataset[idx]["chosen"][:-1], 
+            prompt_data=prompts[idx], 
             response_text=dataset[idx]["response"], 
             client=client, 
             model=args.model, 
@@ -235,6 +241,8 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset-path", type=str, required=True)
+    parser.add_argument("--prompt-column-name", type=str, default="chosen", help="Name of the column containing the prompt/messages")
+    parser.add_argument("--remove-last-message", action="store_true", help="Whether to remove the last message from the conversation history, e.g. if you take it from a 'chosen' column")
     parser.add_argument("--output-dir", type=str, required=True)
     parser.add_argument("--model", type=str, required=True, help="The judge model (e.g., Llama-3.3-70B-Instruct)")
     parser.add_argument("--concurrent", type=int, default=1000, help="Total concurrent API connections")

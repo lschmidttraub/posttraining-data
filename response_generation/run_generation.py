@@ -9,7 +9,10 @@ def main():
     parser = argparse.ArgumentParser(description="Orchestrate SGLang server and Generation")
     parser.add_argument("--model", type=str, required=True)
     parser.add_argument("--dataset", type=str, default="allenai/Dolci-Instruct-DPO")
+    parser.add_argument("--prompt-column-name", type=str, default="prompt", help="Name of the column in the dataset that contains the prompts")
+    parser.add_argument("--remove-last-message", action="store_true", help="Whether to remove the last message from the conversation history")
     parser.add_argument("--base-output-dir", type=str, default="./output")
+    parser.add_argument("--logs-dir", type=str, default="./logs")
     parser.add_argument("--job-time", type=str, default="12:00:00")
 
     parser.add_argument("--slurm-nodes", type=int, default=1)
@@ -27,6 +30,7 @@ def main():
     args = parser.parse_args()
     model_short = args.model.split("/")[-1]
     scratch = os.environ.get("SCRATCH", "/tmp")
+    os.makedirs(args.logs_dir, exist_ok=True)
     if not args.base_url:
         submit_cmd = [
             "python", f"{scratch}/model-launch/serving/submit_job.py",
@@ -67,8 +71,7 @@ def main():
         submit_cmd.extend(["--framework-args", fw_args])
 
         print(f"🚀 Submitting: {' '.join(submit_cmd)}")
-        result = subprocess.run(submit_cmd, capture_output=True, text=True, check=True)
-        
+        result = subprocess.run(submit_cmd, cwd=args.logs_dir, capture_output=True, text=True, check=True)
         combined_output = result.stdout + "\n" + result.stderr
         job_id = None
         
@@ -90,7 +93,7 @@ def main():
         # TODO: bad because we can't cancel the running server this way.
         job_id = ""
         
-    log_file = f"./logs/{job_id}/log.out"
+    log_file = f"{args.logs_dir}/logs/{job_id}/log.out"
     base_url = args.base_url
     target_prefix = "Router URL: " if args.workers > 1 else "All worker URLs: "
 
@@ -116,7 +119,17 @@ def main():
         time.sleep(10)
 
     output_dir = os.path.join(args.base_output_dir, model_short)
-    gen_cmd = ["python", "generate.py", "--dataset-path", args.dataset, "--output-dir", output_dir, "--model", args.model, "--base-url", base_url]
+    gen_cmd = [
+        "python", "generate.py",
+        "--dataset-path", args.dataset,
+        "--prompt-column-name", args.prompt_column_name,
+        "--output-dir", output_dir,
+        "--model", args.model,
+        "--base-url", base_url,
+        "--retry-existing",
+    ]
+    if args.remove_last_message:
+        gen_cmd.append("--remove-last-message")
     if args.no_reasoning_kwargs:
         gen_cmd.append("--no-reasoning-kwargs")
     subprocess.run(gen_cmd, check=True)

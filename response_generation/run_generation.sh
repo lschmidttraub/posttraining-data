@@ -29,14 +29,19 @@ JOBS=(
     # "mistralai/Mistral-Large-3-675B-Instruct-2512 32 8 4 1 16 true vllm true"
 )
 
-BASE_OUTPUT_DIR="./datasets/inference_results_final"
+
+INPUT_DATASET="allenai/Dolci-Instruct-DPO"
+BASE_OUTPUT_DIR="./datasets/vaaax2"
+PROMPT_COLUMN_NAME="chosen"
+REMOVE_LAST_MESSAGE=1  # Set to 1 if you want to remove the last message from the conversation history, e.g. if you take it from a "chosen" column
 JOB_TIME="12:00:00"
 
 ACCOUNT="infra01"
 RESERVATION="PA-2338-RL"
 WORKING_DIR="$SCRATCH/posttraining-data/response_generation"
+LOGS_DIR="/users/smarian/projects/posttraining-data/logs/generation"
 
-mkdir -p ./logs/generation
+mkdir -p $LOGS_DIR
 
 for ENTRY in "${JOBS[@]}"; do
     read -r MODEL NNODES WORKERS NPW DP TP DOCF FRAMEWORK NO_REASONING <<< "$ENTRY"
@@ -48,12 +53,14 @@ for ENTRY in "${JOBS[@]}"; do
     REASONING_FLAG=""
     if [ "$NO_REASONING" = "true" ]; then REASONING_FLAG="--no-reasoning-kwargs"; fi
 
-    env -i PATH=$PATH HOME=$HOME TERM=$TERM USER=$USER LOGNAME=$USER SCRATCH=$SCRATCH \
+    REMOVE_LAST_MESSAGE_FLAG=""
+    if [ "$REMOVE_LAST_MESSAGE" -eq 1 ]; then REMOVE_LAST_MESSAGE_FLAG="--remove-last-message"; fi
+
     sbatch <<EOF
 #!/bin/bash
 #SBATCH --job-name=gen_${SAFE_MODEL_NAME}
 #SBATCH --account=${ACCOUNT}
-#SBATCH --output=./logs/generation/${SAFE_MODEL_NAME}_%j.log
+#SBATCH --output=${LOGS_DIR}/client/${SAFE_MODEL_NAME}_%j.log
 #SBATCH --time=${JOB_TIME}
 #SBATCH --reservation=${RESERVATION}                 # Uncomment if you have a reservation to use
 #SBATCH --partition=normal
@@ -65,7 +72,10 @@ cd ${WORKING_DIR}
 # Using --container-workdir to chdir inside the container as well
 srun --environment=activeuf --container-writable --container-workdir="${WORKING_DIR}" \\
     bash -c "unset SSL_CERT_FILE && python -u run_generation.py \\
+    --dataset '${INPUT_DATASET}' \\
+    --prompt-column-name '${PROMPT_COLUMN_NAME}' \\
     --base-output-dir '${BASE_OUTPUT_DIR}' \\
+    --logs-dir '${LOGS_DIR}/server' \\
     --model '${MODEL}' \\
     --slurm-nodes ${NNODES} \\
     --workers ${WORKERS} \\
@@ -73,7 +83,7 @@ srun --environment=activeuf --container-writable --container-workdir="${WORKING_
     --dp-size ${DP} \\
     --tp-size ${TP} \\
     --framework '${FRAMEWORK}' \\
-    ${OCF_FLAG} ${REASONING_FLAG} --env vllm_qwen35"
+    ${OCF_FLAG} ${REASONING_FLAG} ${REMOVE_LAST_MESSAGE_FLAG}"
 EOF
 done
 

@@ -14,11 +14,19 @@ Key features:
 - Handles various dataset configurations and splits
 - Outputs unified prompt format for decontamination pipeline
 """
+
 import argparse
 import json
 import os
+import time
 
-from datasets import load_dataset, Dataset, DatasetDict, get_dataset_config_names
+from datasets import (
+    load_dataset,
+    Dataset,
+    DatasetDict,
+    get_dataset_config_names,
+    load_from_disk,
+)
 from pyarrow.lib import ArrowTypeError
 from huggingface_hub import hf_hub_download
 from typing import Iterable
@@ -31,347 +39,549 @@ agieval_datasets = [
         "prompt_col_name": "query",
     }
     for dataset_name in [
-        "hails/agieval-aqua-rat",
-        "hails/agieval-gaokao-biology",
-        "hails/agieval-gaokao-chemistry",
-        "hails/agieval-gaokao-chinese",
-        "hails/agieval-gaokao-english",
-        "hails/agieval-gaokao-geography",
-        "hails/agieval-gaokao-history",
-        "hails/agieval-gaokao-mathqa",
-        "hails/agieval-gaokao-physics",
-        "hails/agieval-logiqa-en",
-        "hails/agieval-logiqa-zh",
-        "hails/agieval-sat-math",
-        "hails/agieval-lsat-ar",
-        "hails/agieval-lsat-lr",
-        "hails/agieval-lsat-rc",
-        "hails/agieval-sat-en",
-        "hails/agieval-sat-en-without-passage",
-        "hails/agieval-math",
-        "hails/agieval-gaokao-mathcloze",
-        "hails/agieval-jec-qa-kd",
-        "hails/agieval-jec-qa-ca",
+        # "hails/agieval-aqua-rat",
+        # "hails/agieval-gaokao-biology",
+        # "hails/agieval-gaokao-chemistry",
+        # "hails/agieval-gaokao-chinese",
+        # "hails/agieval-gaokao-english",
+        # "hails/agieval-gaokao-geography",
+        # "hails/agieval-gaokao-history",
+        # "hails/agieval-gaokao-mathqa",
+        # "hails/agieval-gaokao-physics",
+        # "hails/agieval-logiqa-en",
+        # "hails/agieval-logiqa-zh",
+        # "hails/agieval-sat-math",
+        # "hails/agieval-lsat-ar",
+        # "hails/agieval-lsat-lr",
+        # "hails/agieval-lsat-rc",
+        # "hails/agieval-sat-en",
+        # "hails/agieval-sat-en-without-passage",
+        # "hails/agieval-math",
+        # "hails/agieval-gaokao-mathcloze",
+        # "hails/agieval-jec-qa-kd",
+        # "hails/agieval-jec-qa-ca",
     ]
 ]
 
 BENCHMARK_DATASETS = [
-    {
-        "name_or_path": "cais/mmlu",
-        "config_name": "all",
-        "split_name": "test",
-        "prompt_col_name": "question",
-    },
-    {
-        "name_or_path": "TIGER-Lab/MMLU-Pro",
-        "config_name": None,
-        "split_name": "test",
-        "prompt_col_name": "question",
-    },
-    {
-        "name_or_path": "CohereLabs/Global-MMLU",
-        "config_name": "iterate",
-        "split_name": "test",
-        "prompt_col_name": "question",
-    },
-    {
-        "name_or_path": "li-lab/MMLU-ProX",
-        "config_name": "iterate",
-        "split_name": "test",
-        "prompt_col_name": "question",
-    },
-    {
-        "name_or_path": "truthfulqa/truthful_qa",
-        "config_name": "iterate",
-        "split_name": "validation",
-        "prompt_col_name": "question",
-    },
-    {
-        "name_or_path": "alexandrainst/m_truthfulqa",
-        "config_name": "iterate",
-        "split_name": "val",
-        "prompt_col_name": "question",
-    },
-    {
-        "name_or_path": "CohereLabs/include-base-44",
-        "config_name": "iterate",
-        "split_name": "test",
-        "prompt_col_name": "question",
-    },
-    {
-        "name_or_path": "include-base_v2",
-        "config_name": "iterate",
-        "split_name": None,
-        "prompt_col_name": "question",
-    },
-    {
-        "name_or_path": "lukaemon/bbh",
-        "config_name": "iterate",
-        "split_name": "test",
-        "prompt_col_name": "input",
-    },
-    {
-        "name_or_path": "EleutherAI/drop",
-        "config_name": None,
-        "split_name": "validation",
-        "prompt_col_name": "question",
-    },
-    {
-        "name_or_path": "ibm-research/acp_bench",
-        "config_name": "iterate",
-        "split_name": "test",
-        "prompt_col_name": "question",
-    },
-    {
-        "name_or_path": "allenai/ai2_arc",
-        "config_name": "iterate",
-        "split_name": "test",
-        "prompt_col_name": "question",
-    },
+    # {
+    #     "name_or_path": "swiss-ai/include-base-new-45",
+    #     "config_name": "iterate",
+    #     "split_name": "test",
+    #     "prompt_col_name": "question",
+    # },
+    # {
+    #     "name_or_path": "swiss-ai/switzerland_qa",
+    #     "config_name": "iterate",
+    #     "split_name": "test",
+    #     "prompt_col_name": "question",
+    # },
+    # {
+    #     "name_or_path": "swiss-ai/hallulens",
+    #     "config_name": "iterate",
+    #     "split_name": "test",
+    #     "prompt_col_name": "prompt",
+    # },
+    # {
+    #     "name_or_path": "EleutherAI/lambada_openai",
+    #     "config_name": "iterate",
+    #     "split_name": "test",
+    #     "prompt_col_name": "text",
+    # },
+    # {
+    #     "name_or_path": "baber/piqa",
+    #     "config_name": None,
+    #     "split_name": ["train", "test", "validation"],
+    #     "prompt_col_name": "goal",
+    # },
+    # {
+    #     "name_or_path": "HiTZ/truthfulqa-multi",
+    #     "config_name": "iterate",
+    #     "split_name": "validation",
+    #     "prompt_col_name": "question",
+    # },
+    # {
+    #     "name_or_path": "allenai/IFBench_test",
+    #     "config_name": None,
+    #     "split_name": "train",
+    #     "prompt_col_name": "prompt",
+    # },
+    # {
+    #     "name_or_path": "cais/wmdp",
+    #     "config_name": "iterate",
+    #     "split_name": "test",
+    #     "prompt_col_name": "question",
+    # },
+    # {
+    #     "name_or_path": "cambridgeltl/xcopa",
+    #     "config_name": "iterate",
+    #     "split_name": ["validation", "test"],
+    #     "prompt_col_name": "premise",
+    # },
+    # {
+    #     "name_or_path": "facebook/xnli",
+    #     "config_name": [
+    #         "ar",
+    #         "bg",
+    #         "de",
+    #         "el",
+    #         "en",
+    #         "es",
+    #         "fr",
+    #         "hi",
+    #         "ru",
+    #         "sw",
+    #         "th",
+    #         "tr",
+    #         "ur",
+    #         "vi",
+    #         "zh",
+    #     ],
+    #     "split_name": "train",
+    #     "prompt_col_name": "premise",
+    # },
+    # {
+    #     "name_or_path": "swiss-ai/polyglotoxicityprompts",
+    #     "config_name": [
+    #         "ptp-ar",
+    #         "ptp-cs",
+    #         "ptp-de",
+    #         "ptp-en",
+    #         "ptp-es",
+    #         "ptp-fr",
+    #         "ptp-hi",
+    #         "ptp-id",
+    #         "ptp-it",
+    #         "ptp-ja",
+    #         "ptp-ko",
+    #         "ptp-nl",
+    #         "ptp-pl",
+    #         "ptp-pt",
+    #         "ptp-ru",
+    #         "ptp-sv",
+    #         "ptp-zh",
+    #     ],
+    #     "split_name": "full",
+    #     "prompt_col_name": "text",
+    # },
+    # {
+    #     "name_or_path": "swiss-ai/polyglotoxicityprompts",
+    #     "config_name": [
+    #         "wildchat-ar",
+    #         "wildchat-cs",
+    #         "wildchat-de",
+    #         "wildchat-en",
+    #         "wildchat-es",
+    #         "wildchat-fr",
+    #         "wildchat-hi",
+    #         "wildchat-id",
+    #         "wildchat-it",
+    #         "wildchat-ja",
+    #         "wildchat-ko",
+    #         "wildchat-nl",
+    #         "wildchat-pl",
+    #         "wildchat-pt",
+    #         "wildchat-ru",
+    #         "wildchat-sv",
+    #         "wildchat-zh",
+    #     ],
+    #     "split_name": "train",
+    #     "prompt_col_name": "prompt",
+    # },
+    # {
+    #     "name_or_path": "swiss-ai/math_qa",
+    #     "config_name": None,
+    #     "split_name": ["train", "test", "validation"],
+    #     "prompt_col_name": "Problem",
+    # },
+    # {
+    #     "name_or_path": "swiss-ai/blend-sample",
+    #     "config_name": None,
+    #     "split_name": "test",
+    #     "prompt_col_name": "prompt",
+    # },
+    # {
+    #     "name_or_path": "swiss-ai/mlogiqa",
+    #     "config_name": "iterate",
+    #     "split_name": "test",
+    #     "prompt_col_name": "question",
+    # },
+    # {
+    #     "name_or_path": "swiss-ai/realtoxicityprompts",
+    #     "config_name": "realtoxicityprompts_full",
+    #     "split_name": "train",
+    #     "prompt_col_name": "prompt",
+    # },
+    # {
+    #     "name_or_path": "cais/mmlu",
+    #     "config_name": "all",
+    #     "split_name": "test",
+    #     "prompt_col_name": "question",
+    # },
+    # {
+    #     "name_or_path": "TIGER-Lab/MMLU-Pro",
+    #     "config_name": None,
+    #     "split_name": "test",
+    #     "prompt_col_name": "question",
+    # },
+    # {
+    #     "name_or_path": "CohereLabs/Global-MMLU",
+    #     "config_name": "iterate",
+    #     "split_name": "test",
+    #     "prompt_col_name": "question",
+    # },
+    # {
+    #     "name_or_path": "li-lab/MMLU-ProX",
+    #     "config_name": "iterate",
+    #     "split_name": "test",
+    #     "prompt_col_name": "question",
+    # },
+    # {
+    #     "name_or_path": "truthfulqa/truthful_qa",
+    #     "config_name": "iterate",
+    #     "split_name": "validation",
+    #     "prompt_col_name": "question",
+    # },
+    # {
+    #     "name_or_path": "alexandrainst/m_truthfulqa",
+    #     "config_name": "iterate",
+    #     "split_name": "val",
+    #     "prompt_col_name": "question",
+    # },
+    # {
+    #     "name_or_path": "CohereLabs/include-base-44",
+    #     "config_name": "iterate",
+    #     "split_name": "test",
+    #     "prompt_col_name": "question",
+    # },
+    # # {
+    # #     "name_or_path": "include-base_v2",
+    # #     "config_name": "iterate",
+    # #     "split_name": None,
+    # #     "prompt_col_name": "question",
+    # # },
+    # {
+    #     "name_or_path": "lukaemon/bbh",
+    #     "config_name": "iterate",
+    #     "split_name": "test",
+    #     "prompt_col_name": "input",
+    # },
+    # {
+    #     "name_or_path": "EleutherAI/drop",
+    #     "config_name": None,
+    #     "split_name": "validation",
+    #     "prompt_col_name": "question",
+    # },
+    # {
+    #     "name_or_path": "ibm-research/acp_bench",
+    #     "config_name": "iterate",
+    #     "split_name": "test",
+    #     "prompt_col_name": "question",
+    # },
+    # {
+    #     "name_or_path": "allenai/ai2_arc",
+    #     "config_name": "iterate",
+    #     "split_name": "test",
+    #     "prompt_col_name": "question",
+    # },
     # {
     #     "name_or_path": "LumiOpen/arc_challenge_mt",
     #     "config_name": "iterate",
     #     "split_name": "test",
     #     "prompt_col_name": "question",
     # },
+    # {
+    #     "name_or_path": "alexandrainst/m_arc",
+    #     "config_name": "iterate",
+    #     "split_name": "test",
+    #     "prompt_col_name": "instruction",
+    # },
+    # {
+    #     "name_or_path": "Idavidrein/gpqa",
+    #     "config_name": "gpqa_main",
+    #     "split_name": "train",
+    #     "prompt_col_name": "Pre-Revision Question",
+    # },
+    # {
+    #     "name_or_path": "Qwen/P-MMEval",
+    #     "config_name": ["mlogiqa"],
+    #     "split_name": "test",
+    #     "prompt_col_name": "question",
+    # },
+    # {
+    #     "name_or_path": "juletxara/mgsm",
+    #     "config_name": "iterate",
+    #     "split_name": "test",
+    #     "prompt_col_name": "question",
+    # },
+    # {
+    #     "name_or_path": "DigitalLearningGmbH/MATH-lighteval",
+    #     "config_name": "default",
+    #     "split_name": "test",
+    #     "prompt_col_name": "problem",
+    # },
+    # {
+    #     "name_or_path": "openai/gsm8k",
+    #     "config_name": "main",
+    #     "split_name": "test",
+    #     "prompt_col_name": "question",
+    # },
+    # {
+    #     "name_or_path": "madrylab/gsm8k-platinum",
+    #     "config_name": None,
+    #     "split_name": "test",
+    #     "prompt_col_name": "question",
+    # },
+    # {
+    #     "name_or_path": "allenai/math_qa",
+    #     "config_name": None,
+    #     "split_name": "test",
+    #     "prompt_col_name": "Problem",
+    # },
+    # {
+    #     "name_or_path": "EleutherAI/hendrycks_math",
+    #     "config_name": "iterate",
+    #     "split_name": "test",
+    #     "prompt_col_name": "problem",
+    # },
+    # {
+    #     "name_or_path": "AI-MO/aimo-validation-aime",
+    #     "config_name": None,
+    #     "split_name": "train",
+    #     "prompt_col_name": "problem",
+    # },
+    # {
+    #     "name_or_path": "Qwen/PolyMath",
+    #     "config_name": "iterate",
+    #     "split_name": ["top", "high", "medium", "low"],
+    #     "prompt_col_name": "question",
+    # },
+    # {
+    #     "name_or_path": "openai/openai_humaneval",
+    #     "config_name": None,
+    #     "split_name": "test",
+    #     "prompt_col_name": "prompt",
+    # },
+    # {
+    #     "name_or_path": "THUDM/LongBench",
+    #     "config_name": ["hotpotqa"],
+    #     "split_name": "test",
+    #     "prompt_col_name": "input",
+    # },
+    # {
+    #     "name_or_path": "google-research-datasets/mbpp",
+    #     "config_name": "full",
+    #     "split_name": "test",
+    #     "prompt_col_name": "text",
+    # },
+    # {
+    #     "name_or_path": "bigcode/bigcodebench",
+    #     "config_name": None,
+    #     "split_name": "v0.1.0_hf",
+    #     "prompt_col_name": "instruct_prompt",
+    # },
+    # {
+    #     "name_or_path": "google/IFEval",
+    #     "config_name": None,
+    #     "split_name": "train",
+    #     "prompt_col_name": "prompt",
+    # },
+    # {
+    #     "name_or_path": "Rowan/hellaswag",
+    #     "config_name": None,
+    #     "split_name": "test",
+    #     "prompt_col_name": "ctx",
+    # },
+    # {
+    #     "name_or_path": "alexandrainst/m_hellaswag",
+    #     "config_name": "iterate",
+    #     "split_name": "val",
+    #     "prompt_col_name": "ctx",
+    # },
+    # {
+    #     "name_or_path": "facebook/Multi-IF",
+    #     "config_name": None,
+    #     "split_name": "train",
+    #     "prompt_col_name": "turn_1_prompt",
+    # },
+    # {
+    #     "name_or_path": "tatsu-lab/alpaca_eval",
+    #     "config_name": None,
+    #     "split_name": "eval",
+    #     "prompt_col_name": "instruction",
+    # },
+    # {
+    #     "name_or_path": "CohereLabs/m-ArenaHard-v2.0",
+    #     "config_name": "iterate",
+    #     "split_name": "test",
+    #     "prompt_col_name": "prompt",
+    # },
+    # {
+    #     "name_or_path": "lmarena-ai/arena-hard-auto",
+    #     "config_name": None,
+    #     "split_name": "test",
+    #     "prompt_col_name": "prompt",
+    # },
+    # {
+    #     "name_or_path": "toxigen/toxigen-data",
+    #     "config_name": "prompts",
+    #     "split_name": [
+    #         "hate_trans_1k",
+    #         "neutral_black_1k",
+    #         "hate_native_american_1k",
+    #         "neutral_immigrant_1k",
+    #         "hate_middle_east_1k",
+    #         "neutral_lgbtq_1k",
+    #         "neutral_women_1k",
+    #         "neutral_chinese_1k",
+    #         "hate_latino_1k",
+    #         "hate_bisexual_1k",
+    #         "hate_mexican_1k",
+    #         "hate_asian_1k",
+    #         "neutral_mental_disability_1k",
+    #         "neutral_mexican_1k",
+    #         "hate_mental_disability_1k",
+    #         "neutral_bisexual_1k",
+    #         "neutral_latino_1k",
+    #         "hate_chinese_1k",
+    #         "neutral_jewish_1k",
+    #         "hate_muslim_1k",
+    #         "neutral_asian_1k",
+    #         "hate_physical_disability_1k",
+    #         "hate_jewish_1k",
+    #         "neutral_muslim_1k",
+    #         "hate_immigrant_1k",
+    #         "hate_black_1k",
+    #         "hate_lgbtq_1k",
+    #         "hate_women_1k",
+    #         "neutral_middle_east_1k",
+    #         "neutral_native_american_1k",
+    #         "neutral_physical_disability_1k",
+    #     ],
+    #     "prompt_col_name": "text",
+    # },
+    # {
+    #     "name_or_path": "allenai/real-toxicity-prompts",
+    #     "config_name": None,
+    #     "split_name": "train",
+    #     "prompt_col_name": "prompt",
+    # },
+    # {
+    #     "name_or_path": "oskarvanderwal/bbq",
+    #     "config_name": "All",
+    #     "split_name": "test",
+    #     "prompt_col_name": "question",
+    # },
+    # {
+    #     "name_or_path": "CohereLabs/aya_redteaming",
+    #     "config_name": None,
+    #     "split_name": [
+    #         "arabic",
+    #         "english",
+    #         "filipino",
+    #         "french",
+    #         "hindi",
+    #         "russian",
+    #         "serbian",
+    #         "spanish",
+    #     ],
+    #     "prompt_col_name": "prompt",
+    # },
+    # {
+    #     "name_or_path": "ToxicityPrompts/PolygloToxicityPrompts",
+    #     "config_name": [
+    #         "ptp-ar",
+    #         "ptp-cs",
+    #         "ptp-de",
+    #         "ptp-en",
+    #         "ptp-es",
+    #         "ptp-fr",
+    #         "ptp-hi",
+    #         "ptp-id",
+    #         "ptp-it",
+    #         "ptp-ja",
+    #         "ptp-ko",
+    #         "ptp-nl",
+    #         "ptp-pl",
+    #         "ptp-pt",
+    #         "ptp-ru",
+    #         "ptp-sv",
+    #         "ptp-zh",
+    #     ],
+    #     "split_name": "full",
+    #     "prompt_col_name": "text",
+    # },
+    # {
+    #     "name_or_path": "ToxicityPrompts/PolygloToxicityPrompts",
+    #     "config_name": [
+    #         "wildchat-ar",
+    #         "wildchat-cs",
+    #         "wildchat-de",
+    #         "wildchat-en",
+    #         "wildchat-es",
+    #         "wildchat-fr",
+    #         "wildchat-hi",
+    #         "wildchat-id",
+    #         "wildchat-it",
+    #         "wildchat-ja",
+    #         "wildchat-ko",
+    #         "wildchat-nl",
+    #         "wildchat-pl",
+    #         "wildchat-pt",
+    #         "wildchat-ru",
+    #         "wildchat-sv",
+    #         "wildchat-zh",
+    #     ],
+    #     "split_name": "wildchat",
+    #     "prompt_col_name": "prompt",
+    # },
+    # {
+    #     "name_or_path": "nayeon212/BLEnD",
+    #     "config_name": ["multiple-choice-questions"],
+    #     "split_name": "test",
+    #     "prompt_col_name": "prompt",
+    # },
+    # {
+    #     "name_or_path": "shanearora/CaLMQA",
+    #     "config_name": None,
+    #     "split_name": "train",
+    #     "prompt_col_name": "question",
+    # },
+    # {
+    #     "name_or_path": "kellycyy/CulturalBench",
+    #     "config_name": "iterate",
+    #     "split_name": "test",
+    #     "prompt_col_name": "prompt_question",
+    # },
+    # {
+    #     "name_or_path": "swiss-ai/harmbench",
+    #     "config_name": ["DirectRequest", "HumanJailbreaks"],
+    #     "split_name": "test",
+    #     "prompt_col_name": "Behavior",
+    # },
+    # {
+    #     "name_or_path": "DAMO-NLP-SG/MultiJail",
+    #     "config_name": None,
+    #     "split_name": "train",
+    #     "prompt_col_name": ["en", "zh", "it", "vi", "ar", "ko", "th", "bn", "sw", "jv"],
+    # },
+    # {
+    #     "name_or_path": "tau/commonsense_qa",
+    #     "config_name": None,
+    #     "split_name": ["train", "test", "validation"],
+    #     "prompt_col_name": "question",
+    # },
+    # {
+    #     "name_or_path": "HuggingFaceH4/MATH-500",
+    #     "config_name": None,
+    #     "split_name": "test",
+    #     "prompt_col_name": "problem",
+    # },
     {
-        "name_or_path": "alexandrainst/m_arc",
-        "config_name": "iterate",
-        "split_name": "test",
-        "prompt_col_name": "instruction",
-    },
-    {
-        "name_or_path": "Idavidrein/gpqa",
-        "config_name": "gpqa_main",
+        "name_or_path": "HuggingFaceH4/mt_bench_prompts",
+        "config_name": None,
         "split_name": "train",
-        "prompt_col_name": "Pre-Revision Question",
-    },
-    {
-        "name_or_path": "Qwen/P-MMEval",
-        "config_name": ["mlogiqa"],
-        "split_name": "test",
-        "prompt_col_name": "question",
-    },
-    {
-        "name_or_path": "juletxara/mgsm",
-        "config_name": "iterate",
-        "split_name": "test",
-        "prompt_col_name": "question",
-    },
-    {
-        "name_or_path": "DigitalLearningGmbH/MATH-lighteval",
-        "config_name": "default",
-        "split_name": "test",
-        "prompt_col_name": "problem",
-    },
-    {
-        "name_or_path": "openai/gsm8k",
-        "config_name": "main",
-        "split_name": "test",
-        "prompt_col_name": "question",
-    },
-    {
-        "name_or_path": "madrylab/gsm8k-platinum",
-        "config_name": None,
-        "split_name": "test",
-        "prompt_col_name": "question",
-    },
-    {
-        "name_or_path": "allenai/math_qa",
-        "config_name": None,
-        "split_name": "test",
-        "prompt_col_name": "Problem",
-    },
-    {
-        "name_or_path": "EleutherAI/hendrycks_math",
-        "config_name": "iterate",
-        "split_name": "test",
-        "prompt_col_name": "problem",
-    },
-    {
-        "name_or_path": "AI-MO/aimo-validation-aime",
-        "config_name": None,
-        "split_name": "train",
-        "prompt_col_name": "problem",
-    },
-    {
-        "name_or_path": "Qwen/PolyMath",
-        "config_name": "iterate",
-        "split_name": ["top", "high", "medium", "low"],
-        "prompt_col_name": "question",
-    },
-    {
-        "name_or_path": "openai/openai_humaneval",
-        "config_name": None,
-        "split_name": "test",
         "prompt_col_name": "prompt",
-    },
-    {
-        "name_or_path": "THUDM/LongBench",
-        "config_name": ["hotpotqa"],
-        "split_name": "test",
-        "prompt_col_name": "input",
-    },
-    {
-        "name_or_path": "google-research-datasets/mbpp",
-        "config_name": "full",
-        "split_name": "test",
-        "prompt_col_name": "text",
-    },
-    {
-        "name_or_path": "bigcode/bigcodebench",
-        "config_name": None,
-        "split_name": "v0.1.0_hf",
-        "prompt_col_name": "instruct_prompt",
-    },
-    {
-        "name_or_path": "google/IFEval",
-        "config_name": None,
-        "split_name": "train",
-        "prompt_col_name": "prompt",
-    },
-    {
-        "name_or_path": "Rowan/hellaswag",
-        "config_name": None,
-        "split_name": "test",
-        "prompt_col_name": "ctx",
-    },
-    {
-        "name_or_path": "alexandrainst/m_hellaswag",
-        "config_name": "iterate",
-        "split_name": "val",
-        "prompt_col_name": "ctx",
-    },
-    {
-        "name_or_path": "facebook/Multi-IF",
-        "config_name": None,
-        "split_name": "train",
-        "prompt_col_name": "turn_1_prompt",
-    },
-    {
-        "name_or_path": "tatsu-lab/alpaca_eval",
-        "config_name": None,
-        "split_name": "eval",
-        "prompt_col_name": "instruction",
-    },
-    {
-        "name_or_path": "CohereLabs/m-ArenaHard-v2.0",
-        "config_name": "iterate",
-        "split_name": "test",
-        "prompt_col_name": "prompt",
-    },
-    {
-        "name_or_path": "lmarena-ai/arena-hard-auto",
-        "config_name": None,
-        "split_name": "test",
-        "prompt_col_name": "prompt",
-    },
-    {
-        "name_or_path": "tatsu-lab/alpaca_eval",
-        "config_name": None,
-        "split_name": "eval",
-        "prompt_col_name": "instruction",
-    },
-    {
-        "name_or_path": "toxigen/toxigen-data",
-        "config_name": "prompts",
-        "split_name": [
-            "hate_trans_1k",
-            "neutral_black_1k",
-            "hate_native_american_1k",
-            "neutral_immigrant_1k",
-            "hate_middle_east_1k",
-            "neutral_lgbtq_1k",
-            "neutral_women_1k",
-            "neutral_chinese_1k",
-            "hate_latino_1k",
-            "hate_bisexual_1k",
-            "hate_mexican_1k",
-            "hate_asian_1k",
-            "neutral_mental_disability_1k",
-            "neutral_mexican_1k",
-            "hate_mental_disability_1k",
-            "neutral_bisexual_1k",
-            "neutral_latino_1k",
-            "hate_chinese_1k",
-            "neutral_jewish_1k",
-            "hate_muslim_1k",
-            "neutral_asian_1k",
-            "hate_physical_disability_1k",
-            "hate_jewish_1k",
-            "neutral_muslim_1k",
-            "hate_immigrant_1k",
-            "hate_black_1k",
-            "hate_lgbtq_1k",
-            "hate_women_1k",
-            "neutral_middle_east_1k",
-            "neutral_native_american_1k",
-            "neutral_physical_disability_1k",
-        ],
-        "prompt_col_name": "text",
-    },
-    {
-        "name_or_path": "allenai/real-toxicity-prompts",
-        "config_name": None,
-        "split_name": "train",
-        "prompt_col_name": "prompt",
-    },
-    {
-        "name_or_path": "oskarvanderwal/bbq",
-        "config_name": "All",
-        "split_name": "test",
-        "prompt_col_name": "question",
-    },
-    {
-        "name_or_path": "CohereLabs/aya_redteaming",
-        "config_name": None,
-        "split_name": [
-            "arabic",
-            "english",
-            "filipino",
-            "french",
-            "hindi",
-            "russian",
-            "serbian",
-            "spanish",
-        ],
-        "prompt_col_name": "prompt",
-    },
-    {
-        "name_or_path": "ToxicityPrompts/PolygloToxicityPrompts",
-        "config_name": "iterate",
-        "split_name": "full",
-        "prompt_col_name": "prompt",
-    },
-    {
-        "name_or_path": "nayeon212/BLEnD",
-        "config_name": ["multiple-choice-questions"],
-        "split_name": "test",
-        "prompt_col_name": "prompt",
-    },
-    {
-        "name_or_path": "shanearora/CaLMQA",
-        "config_name": None,
-        "split_name": "train",
-        "prompt_col_name": "question",
-    },
-    {
-        "name_or_path": "kellycyy/CulturalBench",
-        "config_name": "iterate",
-        "split_name": "test",
-        "prompt_col_name": "prompt_question",
-    },
-    {
-        "name_or_path": "swissai/harmbench",
-        "config_name": ["DirectRequest", "HumanJailbreaks"],
-        "split_name": "test",
-        "prompt_col_name": "Behavior",
-    },
-    {
-        "name_or_path": "DAMO-NLP-SG/MultiJail",
-        "config_name": None,
-        "split_name": "train",
-        "prompt_col_name": ["en", "zh", "it", "vi", "ar", "ko", "th", "bn", "sw", "jv"],
     },
 ] + agieval_datasets
 
@@ -381,23 +591,41 @@ def load_dataset_split(
     config_name,
     split_name,
     prompt_col_name,
+    cache_dir=None,
     num_processes=1,
 ):
     print(
         f"Loading dataset: {dataset_name}, subset: {config_name}, split: {split_name}"
     )
+
     try:
-        dataset = load_dataset(
-            dataset_name,
-            config_name,
-            split=split_name,
-            num_proc=num_processes,
-            trust_remote_code=True,
-        )
+        if cache_dir is not None and os.path.exists(
+            os.path.join(cache_dir, dataset_name)
+        ):
+            print(f"Loading dataset from cache directory {cache_dir}")
+            try:
+                dataset = load_from_disk(
+                    os.path.join(cache_dir, dataset_name, config_name, split_name),
+                )
+            except Exception as e:
+                dataset = load_dataset(
+                    os.path.join(cache_dir, dataset_name),
+                    config_name,
+                    split=split_name,
+                    num_proc=num_processes,
+                    trust_remote_code=True,
+                )
+        else:
+            print(f"Downloading from Hugging Face")
+            dataset = load_dataset(
+                dataset_name,
+                config_name,
+                split=split_name,
+                num_proc=num_processes,
+                trust_remote_code=True,
+            )
         prompts = dataset[prompt_col_name]
-    except (
-        ArrowTypeError
-    ) as e:  # Error with Qwen/P-MMEval - mlogiqa, ID column shards have different dtypes
+    except ArrowTypeError as e:  # Error with Qwen/P-MMEval - mlogiqa, ID column shards have different dtypes
         print("Error while loading: ", e)
         print("Try streaming instead")
         dataset = load_dataset(
@@ -412,11 +640,21 @@ def load_dataset_split(
 
 
 def get_prompts(
-    dataset_name, config_name, split_name, prompt_col_name, num_processes=1
+    dataset_name,
+    config_name,
+    split_name,
+    prompt_col_name,
+    cache_dir=None,
+    num_processes=1,
 ):
     if isinstance(split_name, str):
         prompts = load_dataset_split(
-            dataset_name, config_name, split_name, prompt_col_name, num_processes
+            dataset_name,
+            config_name,
+            split_name,
+            prompt_col_name,
+            cache_dir,
+            num_processes,
         )
         split_names = [split_name] * len(prompts)
     elif isinstance(split_name, Iterable):
@@ -427,6 +665,7 @@ def get_prompts(
                 config_name,
                 s_name,
                 prompt_col_name,
+                cache_dir,
                 num_processes=num_processes,
             )
             prompts.extend(split_prompts)
@@ -448,6 +687,9 @@ def get_dataset(prompts, split_names):
                 prompts_cleaned.append(p["text"])
             else:
                 raise ValueError("Unknown prompt label {}".format(p))
+        elif isinstance(p, list):
+            # If it is a list of prompts, e.g. mt_bench_prompts only use the first to detect contamination
+            prompts_cleaned.append(p[0])
         else:
             raise ValueError("Unknown prompt type {}".format(p))
     return Dataset.from_dict({"prompt": prompts_cleaned, "split_name": split_names})
@@ -470,16 +712,20 @@ def main(args):
                 data = [json.loads(x) for x in f]
             prompts = [x["prompt"] for x in data]
             split_names = ["default" for _ in range(len(prompts))]
-            decontamination_prompts[dataset_name_save] = get_dataset(prompts, split_names)
-        elif dataset_name == "include-base_v2":
-            data_dir = "/capstor/store/cscs/swissai/infra01/posttrain_data/04_decontaminated/include_v2_prompts"
-            filenames = [x for x in os.listdir(data_dir) if x.endswith(".json")]
-            for filename in filenames:
-                with open(os.path.join(data_dir, filename)) as f:
-                    prompts = [x["question"] for x in json.load(f)]
-                language = filename.split(".json")[0]
-                split_names = ["default" for _ in range(len(prompts))]
-                decontamination_prompts[f"include-base_v2__{language}"] = get_dataset(prompts, split_names)
+            decontamination_prompts[dataset_name_save] = get_dataset(
+                prompts, split_names
+            )
+        # elif dataset_name == "include-base_v2":
+        #     data_dir = "/capstor/store/cscs/swissai/infra01/posttrain_data/04_decontaminated/include_v2_prompts"
+        #     filenames = [x for x in os.listdir(data_dir) if x.endswith(".json")]
+        #     for filename in filenames:
+        #         with open(os.path.join(data_dir, filename)) as f:
+        #             prompts = [x["question"] for x in json.load(f)]
+        #         language = filename.split(".json")[0]
+        #         split_names = ["default" for _ in range(len(prompts))]
+        #         decontamination_prompts[f"include-base_v2__{language}"] = get_dataset(
+        #             prompts, split_names
+        #         )
         elif dataset_name == "DAMO-NLP-SG/MultiJail":
             # Needs custom processing as languages are formatted in columns not subsets or splits
             for prompt_col_name in dataset_args["prompt_col_name"]:
@@ -488,6 +734,7 @@ def main(args):
                     dataset_args["config_name"],
                     dataset_args["split_name"],
                     prompt_col_name,
+                    args.cache_dir,
                     args.num_proc,
                 )
                 decontamination_prompts[dataset_name_save + f"__{prompt_col_name}"] = (
@@ -502,15 +749,41 @@ def main(args):
                 dataset_args["config_name"],
                 dataset_args["split_name"],
                 dataset_args["prompt_col_name"],
+                args.cache_dir,
                 args.num_proc,
             )
-            decontamination_prompts[dataset_name_save] = get_dataset(prompts, split_names)
-        else:
-            config_name_list = (
-                get_dataset_config_names(dataset_name)
-                if (dataset_args["config_name"] == "iterate")
-                else dataset_args["config_name"]
+            decontamination_prompts[dataset_name_save] = get_dataset(
+                prompts, split_names
             )
+        else:
+            if dataset_args["config_name"] == "iterate":
+                print(f"Getting config names for dataset {dataset_name}")
+                try:
+                    config_name_list = get_dataset_config_names(dataset_name)
+                except Exception as e:
+                    if args.cache_dir is not None and os.path.exists(
+                        os.path.join(args.cache_dir, dataset_name)
+                    ):
+                        config_name_list = [
+                            d
+                            for d in os.listdir(
+                                os.path.join(args.cache_dir, dataset_name)
+                            )
+                            if os.path.isdir(
+                                os.path.join(args.cache_dir, dataset_name, d)
+                            )
+                        ]
+                    else:
+                        print(
+                            "\033[91m"
+                            + "Error while getting config names: "
+                            + str(e)
+                            + "\033[0m"
+                        )
+                        config_name_list = []
+            else:
+                config_name_list = dataset_args["config_name"]
+
             print(
                 f"Iterating over subsets in the dataset. Config names in the list: {config_name_list}"
             )
@@ -521,12 +794,15 @@ def main(args):
                         config_name,
                         dataset_args["split_name"],
                         dataset_args["prompt_col_name"],
+                        args.cache_dir,
                         args.num_proc,
                     )
-                except (
-                    Exception
-                ) as e:  # Error with INCLUDE (some subsets are empty) or m_hellaswag (errors with the subset ZH)
-                    print(f"Skipping config name {config_name} due to exception {e}")
+                except Exception as e:  # Error with INCLUDE (some subsets are empty) or m_hellaswag (errors with the subset ZH)
+                    print(
+                        "\033[91m"
+                        + f"Skipping config name {config_name} due to exception {e}"
+                        + "\033[0m"
+                    )
                     continue
                 decontamination_prompts[
                     dataset_name_save + f"__{config_name.replace('/', '_')}"
@@ -541,7 +817,7 @@ def main(args):
 
 if __name__ == "__main__":
     """
-    python gather_decontamination_prompts.py --output="/capstor/store/cscs/swissai/infra01/posttrain_data/04_decontaminated/decontamination_prompts"
+    python gather-decontamination-prompts.py --output="/capstor/store/cscs/swissai/infra01/posttrain_data/04_decontaminated/decontamination_prompts"
     """
     parser = argparse.ArgumentParser(description="Gather prompts for decontamination")
     parser.add_argument(
@@ -554,6 +830,12 @@ if __name__ == "__main__":
         type=int,
         default=16,
         help="Number of processes to use for map operations.",
+    )
+    parser.add_argument(
+        "--cache_dir",
+        type=str,
+        default="/iopsstor/scratch/cscs/smarian/datasets/apertus/decontamination_cache",
+        help="Directory to use for caching datasets. The script will try to load from here before downloading.",
     )
     args = parser.parse_args()
     main(args)

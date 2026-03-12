@@ -9,9 +9,11 @@ def main():
     parser = argparse.ArgumentParser(description="Orchestrate SGLang server and Generation")
     parser.add_argument("--model", type=str, required=True)
     parser.add_argument("--dataset", type=str, required=True)
+    parser.add_argument("--prompt-column-name", type=str, default="prompt", help="Name of the column in the dataset that contains the prompts")
+    parser.add_argument("--remove-last-message", action="store_true", help="Whether to remove the last message from the conversation history for the prompt")
     parser.add_argument("--base-output-dir", type=str, default="./output")
     parser.add_argument("--job-time", type=str, default="12:00:00")
-
+    parser.add_argument("--logs-dir", type=str, default="./logs/annotation")
     parser.add_argument("--slurm-nodes", type=int, default=1)
     parser.add_argument("--workers", type=int, default=1, help="Number of sglang workers")
     parser.add_argument("--nodes-per-worker", type=int, default=1)
@@ -22,6 +24,7 @@ def main():
     
     args = parser.parse_args()
     scratch = os.environ.get("SCRATCH", "/tmp")
+    os.makedirs(args.logs_dir, exist_ok=True)
     
     submit_cmd = [
         "python", f"{scratch}/model-launch/serving/submit_job.py",
@@ -54,7 +57,7 @@ def main():
     submit_cmd.extend(["--framework-args", fw_args])
 
     print(f"🚀 Submitting: {' '.join(submit_cmd)}")
-    result = subprocess.run(submit_cmd, capture_output=True, text=True, check=True)
+    result = subprocess.run(submit_cmd, cwd=args.logs_dir, capture_output=True, text=True, check=True)
     
     combined_output = result.stdout + "\n" + result.stderr
     job_id = None
@@ -74,7 +77,7 @@ def main():
 
     print(f"✅ Found Job ID: {job_id}")
         
-    log_file = f"./logs/{job_id}/log.out"
+    log_file = f"{args.logs_dir}/logs/{job_id}/log.out"
     base_url = None
     target_prefix = "Router URL: " if args.workers > 1 else "All worker URLs: "
 
@@ -116,8 +119,21 @@ def main():
         health_attempts += 1
         time.sleep(10)
 
-    subprocess.run(["python", "annotate.py", "--dataset-path", args.dataset, "--output-dir", args.base_output_dir, "--model", args.model, "--base-url", base_url], check=True)
+    cmd = [
+        "python", "annotate.py", 
+        "--dataset-path", args.dataset, 
+        "--output-dir", args.base_output_dir, 
+        "--model", args.model, 
+        "--base-url", base_url,
+        "--prompt-column-name", args.prompt_column_name,
+    ]
+    if args.remove_last_message:
+        cmd.append("--remove-last-message")
+
+    print(f"🚀 Running: {' '.join(cmd)}")
+    subprocess.run(cmd, check=True)
     
+    print(f"🚀 Cancelling server job: {job_id}")
     subprocess.run(["scancel", job_id])
 
 if __name__ == "__main__":
