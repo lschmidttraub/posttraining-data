@@ -20,6 +20,7 @@ DATASETS=(
     $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/Qwen3-Next-80B-A3B-Instruct
     $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/Mixtral-8x22B-Instruct-v0.1   
     $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/Qwen2.5-1.5B-Instruct 
+    $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/Qwen3.5-397B-A17B
     $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/Qwen3-235B-A22B-Instruct-2507 
     $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/Qwen3-4B-Instruct-2507 
     $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/Qwen3-Omni-30B-A3B-Instruct
