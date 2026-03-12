@@ -2,6 +2,10 @@ PREFERENCE_ANNOTATION_SYSTEM_PROMPT = """You are an impartial judge. Your role i
 
 Carefully read the provided input to understand the task, then assess how well the response fulfills the criteria requirements. If conversation history is present, ensure the response aligns with it; otherwise, evaluate based solely on the instruction. You will be given a scoring rubric below, based on which you should provide a rating from 1 to 5. Your output should only be an integer from 1 to 5. Do not output any additional text or explanations."""
 
+PREFERENCE_ANNOTATION_0_TO_9_SYSTEM_PROMPT = """You are an impartial judge. Your role is to critically evaluate the quality of an AI assistant response based on a given criteria. You'll receive an input with two sections, enclosed in tags: <USER_INPUT>...</USER_INPUT> for the task instructions (and any accompanying context, if applicable), and <ASSISTANT_RESPONSE_TO_EVALUATE>...</ASSISTANT_RESPONSE_TO_EVALUATE> for the AI assistant's response. 
+
+Carefully read the provided input to understand the task, then assess how well the response fulfills the criteria requirements. If conversation history is present, ensure the response aligns with it; otherwise, evaluate based solely on the instruction. You will be given a scoring rubric below, based on which you should provide a rating from 0 to 9. Your output should only be an integer from 0 to 9. Do not output any additional text or explanations."""
+
 INSTRUCTION_FOLLOWING_ANNOTATION_PROMPT = """You will be doing an Instruction Following Assessment of an AI assistant response.
 
 Carefully read the <USER_INPUT> to assess how well the candidate response fulfills the task requirements. If the input includes a conversation history, the response must align with that context as well as the final instruction.
@@ -104,6 +108,37 @@ Here are the user inputs and the AI assistant response to evaluate:
 
 <ASSISTANT_RESPONSE_TO_EVALUATE>{completion}</ASSISTANT_RESPONSE_TO_EVALUATE>"""
 
+
+HELPFULNESS_ANNOTATION_0_TO_9_PROMPT = """You will be doing an Informativeness / Helpfulness Assessment of an AI assistant response.
+
+Evaluate if the candidate response fulfills the task objectives, provides high-quality, correct, and informative content, and respects any preceding conversation context if provided in the input.
+
+Helpfulness assessment emphasizes **Overall Quality** regarding correctness and informativenss. 
+
+**Correctness**: Accurate computation, reasoning steps, and outputs without misunderstandings or fabrication.
+
+When assessing informativeness, consider the following aspects:
+1. **Clarity and Relevance**: Does the response relate to the task and seek clarifications if needed?
+2. **Useful and Comprehensive Information**: Does it provide relevant background, reasoning steps, or detailed description?
+3. **Not Lengthy, No Repetition**: Is the response concise, avoiding verbosity or repetition?
+
+Score on a scale of 0 to 9 based on extent of helpfulness, regarding both informativeness and correctness:
+0. **Severely Incorrect / Harmful**: Contains major inaccuracies or fabricated content that fundamentally misleads the user, even if it appears detailed or confident; does not meaningfully fulfill the task.
+1. **Mostly Incorrect**: Largely incorrect or off-target with only small fragments that are relevant or correct; overall not useful for solving the task.
+2. **Partially Incorrect but Some Usefulness**: Provides some relevant and possibly detailed information, but includes clear errors or misunderstandings that can easily confuse or mislead the user.
+3. **Barely Adequate / Minimally Helpful**: Mostly correct on the main point but shallow, incomplete, or missing important details; helps a bit but leaves significant gaps.
+4. **Correct but Limited**: Correct and coherent, fulfilling the core task requirements, but with limited depth, explanation, or contextualization.
+5. **Solid and Helpful**: Correct, reasonably clear, and practically useful; covers the main aspects of the task with some explanation or examples, though not deeply comprehensive.
+6. **Very Helpful / Informative**: Accurate and clearly written, with good structure and reasoning; covers most relevant aspects with useful detail and some contextual or background information.
+7. **Highly Informative and Well-Reasoned**: Fully accurate, well-organized, and detailed; provides strong reasoning, relevant background, and actionable guidance without unnecessary verbosity.
+8. **Excellent / Near-Optimal Helpfulness**: Exceptionally clear, accurate, and insightful; anticipates user needs, addresses edge cases, and provides thorough yet focused guidance.
+9. **Outstandingly Helpful**: Both fully accurate and deeply insightful; offers comprehensive, well-structured, and highly actionable information that significantly exceeds typical expectations for informativeness and usefulness, while remaining concise and non-repetitive.
+
+Here are the user inputs and the AI assistant response to evaluate:
+
+<USER_INPUT>{prompt}</USER_INPUT>
+
+<ASSISTANT_RESPONSE_TO_EVALUATE>{completion}</ASSISTANT_RESPONSE_TO_EVALUATE>"""
 
 CHARTER_ANNOTATION_PROMPT = """You will be rating how well an AI assistant response to a user prompt follows the Swiss AI Charter.
 
