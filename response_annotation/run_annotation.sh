@@ -38,6 +38,7 @@ DATASETS=(
     $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/Ministral-3-14B-Instruct-2512          
     $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/Ministral-3-3B-Instruct-2512  
     $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/Mistral-Large-3-675B-Instruct-2512
+    $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/Qwen3.5-397B-A17B
 )
 
 BASE_OUTPUT_DIR="$SCRATCH/posttraining-data/response_annotation/datasets/inference_results_final"

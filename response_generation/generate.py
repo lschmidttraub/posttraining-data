@@ -99,7 +99,7 @@ async def main(args):
         dataset = load_from_disk(args.dataset_path)
     else:
         dataset = load_dataset(args.dataset_path, split="train")
-    dataset = dataset.select(range(10000))
+        
     os.makedirs(args.output_dir, exist_ok=True)
     output_jsonl = os.path.join(args.output_dir, "responses.jsonl")
 

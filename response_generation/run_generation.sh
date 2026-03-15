@@ -39,7 +39,7 @@ JOB_TIME="12:00:00"
 ACCOUNT="infra01"
 RESERVATION="PA-2338-RL"
 WORKING_DIR="$SCRATCH/posttraining-data/response_generation"
-LOGS_DIR="/users/smarian/projects/posttraining-data/logs/generation"
+LOGS_DIR="./logs/annotation"
 
 mkdir -p $LOGS_DIR
 
