@@ -14,33 +14,33 @@ OCF_FLAG="--disable-ocf"
 # Array of absolute paths to your datasets
 DATASETS=(
     $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/Mistral-Small-24B-Instruct-2501
-    $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/Qwen2.5-0.5B-Instruct
-    $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/Qwen3-1.7B          
-    $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/Qwen3-32B          
-    $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/Qwen3-Next-80B-A3B-Instruct
-    $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/Mixtral-8x22B-Instruct-v0.1   
-    $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/Qwen2.5-1.5B-Instruct 
-    $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/Qwen3.5-397B-A17B
-    $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/Qwen3-235B-A22B-Instruct-2507 
-    $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/Qwen3-4B-Instruct-2507 
-    $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/Qwen3-Omni-30B-A3B-Instruct
-    $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/Phi-4-mini-instruct           
-    $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/Qwen3-0.6B           
-    $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/Qwen3-30B-A3B-Instruct-2507  
-    $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/Qwen3-8B
-    $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/EuroLLM-1.7B-Instruct 
-    $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/Ministral-3-8B-Instruct-2512 
-    $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/SmolLM3-3B 
-    $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/EuroLLM-22B-Instruct-2512     
-    $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/Trinity-Mini
-    $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/EuroLLM-9B-Instruct-2512             
-    $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/Trinity-Nano-Preview
-    $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/Ministral-3-14B-Instruct-2512          
-    $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/Ministral-3-3B-Instruct-2512  
-    $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/Mistral-Large-3-675B-Instruct-2512
+    # $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/Qwen2.5-0.5B-Instruct
+    # $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/Qwen3-1.7B          
+    # $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/Qwen3-32B          
+    # $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/Qwen3-Next-80B-A3B-Instruct
+    # $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/Mixtral-8x22B-Instruct-v0.1   
+    # $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/Qwen2.5-1.5B-Instruct 
+    # $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/Qwen3.5-397B-A17B
+    # $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/Qwen3-235B-A22B-Instruct-2507 
+    # $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/Qwen3-4B-Instruct-2507 
+    # $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/Qwen3-Omni-30B-A3B-Instruct
+    # $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/Phi-4-mini-instruct           
+    # $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/Qwen3-0.6B           
+    # $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/Qwen3-30B-A3B-Instruct-2507  
+    # $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/Qwen3-8B
+    # $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/EuroLLM-1.7B-Instruct 
+    # $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/Ministral-3-8B-Instruct-2512 
+    # $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/SmolLM3-3B 
+    # $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/EuroLLM-22B-Instruct-2512     
+    # $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/Trinity-Mini
+    # $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/EuroLLM-9B-Instruct-2512             
+    # $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/Trinity-Nano-Preview
+    # $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/Ministral-3-14B-Instruct-2512          
+    # $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/Ministral-3-3B-Instruct-2512  
+    # $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/Mistral-Large-3-675B-Instruct-2512
 )
 
-BASE_OUTPUT_DIR="$SCRATCH/posttraining-data/response_annotation/datasets/inference_results_final"
+BASE_OUTPUT_DIR="$SCRATCH/posttraining-data/response_annotation/datasets/Dolci-Instruct-DPO/charter_annotations"
 PROMPT_COLUMN_NAME="chosen"
 REMOVE_LAST_MESSAGE=1  # Set to 1 if you want to remove the last message from the conversation history, e.g. if you take it from a "chosen" column
 JOB_TIME="12:00:00"
