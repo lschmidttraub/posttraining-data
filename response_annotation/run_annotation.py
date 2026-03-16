@@ -57,7 +57,7 @@ def main():
     submit_cmd.extend(["--framework-args", fw_args])
 
     print(f"🚀 Submitting: {' '.join(submit_cmd)}")
-    result = subprocess.run(submit_cmd, cwd=args.logs_dir, capture_output=True, text=True, check=True)
+    result = subprocess.run(submit_cmd, capture_output=True, text=True, check=True)
     
     combined_output = result.stdout + "\n" + result.stderr
     job_id = None
@@ -77,7 +77,7 @@ def main():
 
     print(f"✅ Found Job ID: {job_id}")
         
-    log_file = f"{args.logs_dir}/logs/{job_id}/log.out"
+    log_file = f"{args.logs_dir}/{job_id}/log.out"
     base_url = None
     target_prefix = "Router URL: " if args.workers > 1 else "All worker URLs: "
 
