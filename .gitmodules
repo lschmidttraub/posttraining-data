@@ -1,0 +1,6 @@
+[submodule "08b-judge-evaluation/benchmarks/IF-RewardBench"]
+	path = 08b-judge-evaluation/benchmarks/IF-RewardBench
+	url = https://github.com/thu-coai/IF-RewardBench.git
+[submodule "08b-judge-evaluation/benchmarks/RM-Bench"]
+	path = 08b-judge-evaluation/benchmarks/RM-Bench
+	url = https://github.com/THU-KEG/RM-Bench.git

@@ -40,7 +40,7 @@ DATASETS=(
     # $SCRATCH/posttraining-data/response_generation/datasets/inference_results_final/Mistral-Large-3-675B-Instruct-2512
 )
 
-BASE_OUTPUT_DIR="$SCRATCH/posttraining-data/response_annotation/datasets/Dolci-Instruct-DPO/charter_annotations"
+BASE_OUTPUT_DIR="$SCRATCH/posttraining-data/response_annotation/datasets/Dolci-Instruct-DPO/helpfulness_0_to_9_annotations"
 PROMPT_COLUMN_NAME="chosen"
 REMOVE_LAST_MESSAGE=1  # Set to 1 if you want to remove the last message from the conversation history, e.g. if you take it from a "chosen" column
 JOB_TIME="12:00:00"
