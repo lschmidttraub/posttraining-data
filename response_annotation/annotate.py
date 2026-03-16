@@ -31,18 +31,19 @@ ASPECT2ANNOTATION_PROMPT = {
     # "instruction_following": INSTRUCTION_FOLLOWING_ANNOTATION_PROMPT,
     # "honesty": HONESTY_ANNOTATION_PROMPT,
     # "truthfulness": TRUTHFULNESS_ANNOTATION_PROMPT,
-    # "helpfulness": HELPFULNESS_ANNOTATION_PROMPT,
+    "helpfulness": HELPFULNESS_ANNOTATION_PROMPT,
     # "charter": CHARTER_ANNOTATION_PROMPT,
 
-    "helpfulness": HELPFULNESS_ANNOTATION_0_TO_9_PROMPT,
+    # "helpfulness_0_to_9": HELPFULNESS_ANNOTATION_0_TO_9_PROMPT,
 }
 
 # ==============================================================================
 # SCORING RANGE
 # ==============================================================================
 
-# SCORING_RANGE = [str(i) for i in range(1, 5)]
-SCORING_RANGE = [str(i) for i in range(0, 10)]
+SCORING_RANGE = [str(i) for i in range(1, 5)]
+# SCORING_RANGE = [str(i) for i in range(0, 10)]
+# PREFERENCE_ANNOTATION_SYSTEM_PROMPT = PREFERENCE_ANNOTATION_0_TO_9_SYSTEM_PROMPT
 
 # ==============================================================================
 # PIPELINE LOGIC
@@ -131,7 +132,7 @@ async def annotate_sample(idx, prompt_data, response_text, client, model, temper
             completion=response_text
         )
         messages = [
-            {"role": "system", "content": PREFERENCE_ANNOTATION_0_TO_9_SYSTEM_PROMPT},
+            {"role": "system", "content": PREFERENCE_ANNOTATION_SYSTEM_PROMPT},
             {"role": "user", "content": user_prompt}
         ]
         tasks.append(get_aspect_annotation(client, model, messages, temperature, semaphore))
