@@ -44,7 +44,7 @@ DATASETS=(
 BASE_OUTPUT_DIR="$SCRATCH/posttraining-data/response_annotation/datasets/inference_results_final"
 PROMPT_COLUMN_NAME="chosen"
 REMOVE_LAST_MESSAGE=1  # Set to 1 if you want to remove the last message from the conversation history, e.g. if you take it from a "chosen" column
-JOB_TIME="05:00:00"
+JOB_TIME="12:00:00"
 
 ACCOUNT="infra01"
 RESERVATION="PA-2338-RL"

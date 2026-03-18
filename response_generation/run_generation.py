@@ -33,7 +33,7 @@ def main():
     os.makedirs(args.logs_dir, exist_ok=True)
     if not args.base_url:
         submit_cmd = [
-            "python", f"{scratch}/model-launch/serving/submit_job.py",
+            "python", f"{scratch}/model-launch/legacy/serving/submit_job.py",
             "--slurm-nodes", str(args.slurm_nodes),
             "--slurm-time", args.job_time,
             "--serving-framework", args.framework,
@@ -41,11 +41,11 @@ def main():
         ]
         if args.env:
             submit_cmd.extend([
-                "--slurm-environment", f"{scratch}/model-launch/serving/envs/{args.env}.toml"
+                "--slurm-environment", f"{scratch}/model-launch/legacy/serving/envs/{args.env}.toml"
             ])
         else:
             submit_cmd.extend([
-                "--slurm-environment", f"{scratch}/model-launch/serving/envs/{args.framework}.toml"
+                "--slurm-environment", f"{scratch}/model-launch/legacy/serving/envs/{args.framework}.toml"
             ])
             
         if args.workers > 1:
@@ -53,7 +53,7 @@ def main():
                 "--workers", str(args.workers),
                 "--nodes-per-worker", str(args.nodes_per_worker),
                 "--use-router",
-                "--router-environment", f"{scratch}/model-launch/serving/envs/sglang.toml",
+                "--router-environment", f"{scratch}/model-launch/legacy/serving/envs/sglang.toml",
             ])
 
         if args.disable_ocf:

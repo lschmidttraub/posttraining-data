@@ -27,12 +27,12 @@ def main():
     os.makedirs(args.logs_dir, exist_ok=True)
     
     submit_cmd = [
-        "python", f"{scratch}/model-launch/serving/submit_job.py",
+        "python", f"{scratch}/model-launch/legacy/serving/submit_job.py",
         "--slurm-nodes", str(args.slurm_nodes),
         "--slurm-time", args.job_time,
         "--serving-framework", args.framework,
         "--worker-port", "8080",
-        "--slurm-environment", f"{scratch}/model-launch/serving/envs/{args.framework}.toml",
+        "--slurm-environment", f"{scratch}/model-launch/legacy/serving/envs/{args.framework}.toml",
     ]
     
     if args.workers > 1:
