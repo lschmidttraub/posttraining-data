@@ -120,7 +120,7 @@ def main():
         time.sleep(10)
 
     cmd = [
-        "python", "annotate.py", 
+        "python", "response_annotation/annotate.py", 
         "--dataset-path", args.dataset, 
         "--output-dir", args.base_output_dir, 
         "--model", args.model, 

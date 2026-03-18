@@ -21,7 +21,7 @@ from transformers import AutoTokenizer
 # Config
 # ---------------------------------------------------------------------------
 DATASET_PATH = "/iopsstor/scratch/cscs/dmelikidze/posttraining-data/response_annotation/datasets/combined_annotated"
-OUTPUT_PATH = "/iopsstor/scratch/cscs/dmelikidze/posttraining-data/preference_acquisition/datasets/MaxMin"
+OUTPUT_PATH = "/iopsstor/scratch/cscs/dmelikidze/posttraining-data/preference_acquisition/datasets/MaxMin_Initial"
 MODEL_NAME_OR_PATH = "/iopsstor/scratch/cscs/dmelikidze/aper_mods/apertus1-base-sft-stage1"
 MAX_TOKENS = 4096
 EXCLUDED_MODELS = {}

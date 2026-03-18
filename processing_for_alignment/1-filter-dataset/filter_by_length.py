@@ -17,7 +17,7 @@ Usage:
 """
 
 import argparse
-from datasets import load_from_disk
+from datasets import load_from_disk, DatasetDict
 from transformers import AutoTokenizer
 
 
@@ -31,9 +31,9 @@ def main(args):
     print(f"Loading dataset from {args.dataset_path}")
     dataset = load_from_disk(args.dataset_path)
 
-    # If loaded as a DatasetDict, extract the train split
+    # If loaded as a DatasetDict, extract the train_split
     if hasattr(dataset, "keys"):
-        split = list(dataset.keys())[0]
+        split = "train_split" if "train_split" in dataset else list(dataset.keys())[0]
         print(f"DatasetDict detected, using '{split}' split")
         dataset = dataset[split]
 
@@ -60,7 +60,7 @@ def main(args):
     print(f"Filtered dataset size: {filtered_size} (removed {removed}, {removed/original_size*100:.1f}%)")
 
     print(f"Saving to {args.output_dir}")
-    dataset.save_to_disk(args.output_dir)
+    DatasetDict({"train_split": dataset}).save_to_disk(args.output_dir)
     print("Done.")
 
 

@@ -44,14 +44,13 @@ DATASETS=(
 BASE_OUTPUT_DIR="$SCRATCH/posttraining-data/response_annotation/datasets/inference_results_final"
 PROMPT_COLUMN_NAME="chosen"
 REMOVE_LAST_MESSAGE=1  # Set to 1 if you want to remove the last message from the conversation history, e.g. if you take it from a "chosen" column
-JOB_TIME="12:00:00"
+JOB_TIME="05:00:00"
 
 ACCOUNT="infra01"
 RESERVATION="PA-2338-RL"
 REMOVE_LAST_MESSAGE_FLAG=""
 if [ "$REMOVE_LAST_MESSAGE" -eq 1 ]; then REMOVE_LAST_MESSAGE_FLAG="--remove-last-message"; fi
 
-WORKING_DIR="$SCRATCH/posttraining-data/response_annotation"
 LOGS_DIR="./logs/annotation"
 
 
@@ -71,12 +70,8 @@ for DATASET_PATH in "${DATASETS[@]}"; do
 #SBATCH --partition=normal
 #SBATCH --nodes=1
 
-# Direct directory change
-cd ${WORKING_DIR}
-
-# Using --container-workdir to chdir inside the container as well
-srun --environment=activeuf --container-writable --container-workdir="${WORKING_DIR}" \\
-    bash -c "unset SSL_CERT_FILE && python -u run_annotation.py \\
+srun --environment="./response_generation/env/alignment.toml" --container-writable --container-workdir="$PWD" \\
+    bash -c "unset SSL_CERT_FILE && python -u response_annotation/run_annotation.py \\
     --base-output-dir '${BASE_OUTPUT_DIR}' \\
     --logs-dir '${LOGS_DIR}' \\
     --dataset '${DATASET_PATH}' \\

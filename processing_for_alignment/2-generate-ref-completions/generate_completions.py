@@ -36,7 +36,7 @@ import urllib.request
 
 import httpx
 import uvloop
-from datasets import load_from_disk
+from datasets import load_from_disk, DatasetDict
 from openai import AsyncOpenAI
 from tqdm.asyncio import tqdm_asyncio
 from transformers import AutoTokenizer
@@ -101,6 +101,12 @@ def launch_inference_server(args, logs_dir):
         "--use-router",
         "--framework-args", framework_args,
     ]
+
+    if args.nodes_per_worker is not None:
+        cmd.extend(["--nodes-per-worker", str(args.nodes_per_worker)])
+
+    if args.router_environment:
+        cmd.extend(["--router-environment", args.router_environment])
 
     if args.slurm_time:
         cmd.extend(["--slurm-time", args.slurm_time])
@@ -221,10 +227,10 @@ async def wait_for_server(base_url, model_name, timeout=600, poll_interval=15):
                 if resp.status_code == 200:
                     models = resp.json()
                     available = [m["id"] for m in models.get("data", [])]
-                    if model_name in available:
+                    if model_name in available or available:
                         print(f"Server ready! Available models: {available}")
                         return
-                    print(f"Server responded but model '{model_name}' not yet available (got: {available})")
+                    print(f"Server responded but no models available yet")
         except Exception:
             elapsed = int(time.time() - start)
             print(f"  Server not ready yet ({elapsed}s elapsed)...")
@@ -251,7 +257,7 @@ async def main(args):
     print(f"Loading dataset from {args.dataset_path}")
     dataset = load_from_disk(args.dataset_path)
     if hasattr(dataset, "keys"):
-        split = list(dataset.keys())[0]
+        split = "train_split" if "train_split" in dataset else list(dataset.keys())[0]
         print(f"DatasetDict detected, using '{split}' split")
         dataset = dataset[split]
 
@@ -353,7 +359,7 @@ async def main(args):
     dataset = dataset.add_column("prompt_messages", prompts_json)
     dataset = dataset.add_column("reference_completions", all_completions)
 
-    dataset.save_to_disk(args.output_dir)
+    DatasetDict({"train_split": dataset}).save_to_disk(args.output_dir)
 
     # Cancel the server job if we launched it
     if server_job_id:
@@ -392,6 +398,8 @@ if __name__ == "__main__":
     parser.add_argument("--workers", type=int, default=1, help="Number of independent vLLM workers")
     parser.add_argument("--tensor-parallel-size", type=int, default=1, help="Tensor parallel size per worker")
     parser.add_argument("--data-parallel-size", type=int, default=4, help="Data parallel size per worker")
+    parser.add_argument("--nodes-per-worker", type=int, default=None, help="Nodes per worker (default: slurm-nodes / workers)")
+    parser.add_argument("--router-environment", type=str, default=None, help="SLURM environment for router (default: same as worker)")
     parser.add_argument("--max-model-len", type=int, default=8192*2, help="Max model context length for vLLM")
     parser.add_argument("--dtype", type=str, default="bfloat16", help="Model dtype")
 

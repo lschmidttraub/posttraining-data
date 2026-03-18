@@ -120,7 +120,7 @@ def main():
 
     output_dir = os.path.join(args.base_output_dir, model_short)
     gen_cmd = [
-        "python", "generate.py",
+        "python", "response_generation/generate.py",
         "--dataset-path", args.dataset,
         "--prompt-column-name", args.prompt_column_name,
         "--output-dir", output_dir,
