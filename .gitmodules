@@ -4,3 +4,9 @@
 [submodule "08b-judge-evaluation/benchmarks/RM-Bench"]
 	path = 08b-judge-evaluation/benchmarks/RM-Bench
 	url = https://github.com/THU-KEG/RM-Bench.git
+[submodule "08b-judge-evaluation/benchmarks/JudgeBench"]
+	path = 08b-judge-evaluation/benchmarks/JudgeBench
+	url = https://github.com/ScalerLab/JudgeBench.git
+[submodule "08b-judge-evaluation/benchmarks/CALM"]
+	path = 08b-judge-evaluation/benchmarks/CALM
+	url = https://github.com/Y0oMu/LLM-Judge-Bias-Dataset.git
