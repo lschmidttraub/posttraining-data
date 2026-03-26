@@ -1,5 +1,23 @@
-# Post-Training Data Processing Pipeline
+# Post-Training Data Processing Pipeline for Self-Distillation Post-Training
+This is fork of the `response-generation` branch of the `posttraining-data` repo, focused on expert response generation for self-distillation.
+Make sure you have the `cuda-13-fix-final` branch of the `model-launch` repository in you `$SCRATCH` before running the script.
+The generation works as follows:
+- The `response-generation/run_generation.sh` file submits a single-node job than runs `response-generation/run_generation.py`
+- The python script first submits a job to launch the server through the `model-launch` repo
+- It then waits for the server to start, and once it starts, it locally runs `response-generation/generate.py`, which sends requests to the server.
 
+
+For clarity, I've moved all the folders that aren't (yet) directly relevant for us into the `legacy/` folder, as a useful reference. 
+
+
+
+
+
+
+
+
+
+# Old README
 `posttraining-data` is a turn-key 8-stage pipeline for processing HuggingFace datasets into training-ready format. It was used to prepare Apertus' post-training data and notably its [SFT mixture](https://huggingface.co/datasets/swiss-ai/apertus-sft-mixture). More information can be found in the [Apertus tech report](https://github.com/swiss-ai/apertus-tech-report).
 
 ## Pipeline Stages

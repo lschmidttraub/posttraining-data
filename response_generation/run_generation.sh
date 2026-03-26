@@ -8,7 +8,7 @@ JOBS=(
   # "Qwen/Qwen3-1.7B 1 1 1 4 1 false sglang false"
   # "Qwen/Qwen3-4B-Instruct-2507 1 1 1 4 1 false sglang false"
   # "Qwen/Qwen3-8B 1 1 1 4 1 false sglang false"
-  "Qwen/Qwen3-32B 1 1 1 4 1 false sglang false"
+  # "Qwen/Qwen3-32B 1 1 1 4 1 false sglang false"
   # "Qwen/Qwen3-30B-A3B-Instruct-2507 1 1 1 1 4 false sglang false"
   # "Qwen/Qwen3-Omni-30B-A3B-Instruct 1 1 1 1 4 false sglang false"
   # "Qwen/Qwen3-Next-80B-A3B-Instruct 1 1 1 1 4 false sglang false"
@@ -25,17 +25,18 @@ JOBS=(
   # "utter-project/EuroLLM-1.7B-Instruct 1 1 1 4 1 false sglang false"
   # "utter-project/EuroLLM-9B-Instruct-2512 1 1 1 4 1 false sglang false"
   # "utter-project/EuroLLM-22B-Instruct-2512 1 1 1 4 1 false sglang false"
-  # "Qwen/Qwen3.5-397B-A17B 32 8 4 1 16 true vllm false"
+  "Qwen/Qwen3.5-397B-A17B 32 8 4 1 16 true vllm false"
   # "mistralai/Mistral-Large-3-675B-Instruct-2512 32 8 4 1 16 true vllm true"
 )
 
-INPUT_DATASET="Team-ACE/ToolACE"
-BASE_OUTPUT_DIR="$SCRATCH/datasets/completions/"
-PROMPT_COLUMN_NAME="system"
-REMOVE_LAST_MESSAGE=1 # Set to 1 if you want to remove the last message from the conversation history, e.g. if you take it from a "chosen" column
+INPUT_DATASET="KbsdJames/Omni-MATH"
+BASE_OUTPUT_DIR="$SCRATCH/datasets/completions/$INPUT_DATASET"
+PROMPT_COLUMN_NAME="problem"
+REMOVE_LAST_MESSAGE=0 # Set to 1 if you want to remove the last message from the conversation history, e.g. if you take it from a "chosen" column
 JOB_TIME="12:00:00"
+SPLIT="test"
 
-ACCOUNT="a156"
+ACCOUNT="infra01"
 # RESERVATION="PA-2338-RL"
 LOGS_DIR="./logs/generation"
 
@@ -63,6 +64,8 @@ for ENTRY in "${JOBS[@]}"; do
 ##SBATCH --reservation=${RESERVATION}                 # Uncomment if you have a reservation to use
 #SBATCH --partition=normal
 #SBATCH --nodes=1
+#SBATCH --mail-type=END,FAIL 
+##SBATCH --mail-user=leoschmidt@ethz.ch               # Uncomment and replace with you email if you want to be notified
 
 srun --environment="completion-generation" --container-writable --container-workdir="$PWD" \\
     bash -c "unset SSL_CERT_FILE && python -u response_generation/run_generation.py \\
@@ -77,6 +80,9 @@ srun --environment="completion-generation" --container-writable --container-work
     --dp-size ${DP} \\
     --tp-size ${TP} \\
     --framework '${FRAMEWORK}' \\
+    --job-time '${JOB_TIME}' \\
+    --account ${ACCOUNT} \\
+    --split '${SPLIT}' \\
     ${OCF_FLAG} ${REASONING_FLAG} ${REMOVE_LAST_MESSAGE_FLAG}"
 EOF
 done

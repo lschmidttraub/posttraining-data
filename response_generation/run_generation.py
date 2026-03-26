@@ -1,5 +1,6 @@
 import os
 import sys
+import json
 import time
 import argparse
 import subprocess
@@ -15,6 +16,8 @@ def main():
     parser.add_argument("--logs-dir", type=str, default="./logs")
     parser.add_argument("--job-time", type=str, default="12:00:00")
 
+    parser.add_argument("--account", type=str, default="infra01")
+
     parser.add_argument("--slurm-nodes", type=int, default=1)
     parser.add_argument("--workers", type=int, default=1, help="Number of sglang workers")
     parser.add_argument("--nodes-per-worker", type=int, default=1)
@@ -24,8 +27,9 @@ def main():
     parser.add_argument("--framework", type=str, default="sglang", help="Serving framework (e.g., sglang, vllm)")
     parser.add_argument("--no-reasoning-kwargs", action="store_true", help="Disable passing chat_template_kwargs for reasoning")
     parser.add_argument("--env", type=str, help="Optional environment name for job submission (e.g., vllm_qwen35)", required=False)
-    
+    parser.add_argument("--split", type=str, default="train", help="Split of the dataset to use")
     parser.add_argument("--base-url", type=str, help="Base URL for the model server (overrides auto-discovery)", required=False)
+
 
     args = parser.parse_args()
     model_short = args.model.split("/")[-1]
@@ -38,6 +42,7 @@ def main():
             "--slurm-time", args.job_time,
             "--serving-framework", args.framework,
             "--worker-port", "8080",
+            "--slurm-account", args.account,
         ]
         if args.env:
             submit_cmd.extend([
@@ -110,19 +115,51 @@ def main():
         time.sleep(5)
 
     health_url = base_url.replace("/v1", "/health")
+    completions_url = f"{base_url}/chat/completions"
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+    print("⏳ Waiting for server health check...")
     while True:
         try:
             with opener.open(urllib.request.Request(health_url), timeout=5) as resp:
                 if resp.getcode() == 200: break
         except: pass
         time.sleep(10)
+    print("✅ Server health check passed.")
+
+    # Send a real inference request to verify the full pipeline works.
+    # This catches router race conditions (workers not yet registered) and
+    # routing issues (e.g. SGLang router circuit breakers with vLLM backends).
+    probe_payload = json.dumps({
+        "model": args.model,
+        "messages": [{"role": "user", "content": "Say hi."}],
+        "max_tokens": 4,
+        "temperature": 0,
+    }).encode()
+    probe_headers = {"Content-Type": "application/json"}
+
+    print("⏳ Sending readiness probe (test inference request)...")
+    probe_delay = 5
+    while True:
+        try:
+            req = urllib.request.Request(completions_url, data=probe_payload, headers=probe_headers)
+            with opener.open(req, timeout=120) as resp:
+                if resp.getcode() == 200:
+                    print("✅ Readiness probe succeeded — server is fully operational.")
+                    break
+        except urllib.error.HTTPError as e:
+            print(f"  Readiness probe returned HTTP {e.code}, retrying in {probe_delay}s...")
+        except Exception as e:
+            print(f"  Readiness probe failed ({e}), retrying in {probe_delay}s...")
+        time.sleep(probe_delay)
+        probe_delay = min(probe_delay * 2, 60)
 
     output_dir = os.path.join(args.base_output_dir, model_short)
     gen_cmd = [
         "python", "response_generation/generate.py",
         "--dataset-path", args.dataset,
         "--prompt-column-name", args.prompt_column_name,
+        "--split", args.split,
         "--output-dir", output_dir,
         "--model", args.model,
         "--base-url", base_url,
