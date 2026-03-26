@@ -1,13 +1,16 @@
 import os
 import json
+import random
 import asyncio
 import argparse
 import httpx
 import uvloop
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, APIStatusError, APIConnectionError, APITimeoutError
 from datasets import load_from_disk, load_dataset
 from transformers import AutoTokenizer
 from tqdm.asyncio import tqdm_asyncio
+
+RETRYABLE_STATUS_CODES = {408, 429, 500, 502, 503, 504}
 
 def has_saved_response(response):
     """Return True when a saved response contains non-whitespace text."""
@@ -47,29 +50,41 @@ async def writer_task(queue, filepath):
             f.flush() # Ensure it's immediately written to disk
             queue.task_done()
 
-async def get_response(idx, prompt, client, model, max_length, temperature, semaphore, queue, use_reasoning=True):
-    """Fetches the response and immediately puts it in the write queue."""
-    async with semaphore:
-        try:
-            # Sanitize messages to avoid Mistral tokenizer tool_calls issues
-            prompt = sanitize_messages(prompt)
-            
-            kwargs = dict(
-                model=model,
-                messages=prompt,
-                max_tokens=max_length,
-                temperature=temperature,
-            )
-            if use_reasoning:
-                kwargs["extra_body"] = {"chat_template_kwargs": {"enable_thinking": False}}
-            
-            res = await client.chat.completions.create(**kwargs)
-            content = res.choices[0].message.content
-        except Exception as e:
-            print(f"Error for index {idx}: {e}")
-            content = ""
+def _is_retryable(exc):
+    if isinstance(exc, (APIConnectionError, APITimeoutError)):
+        return True
+    if isinstance(exc, APIStatusError) and exc.status_code in RETRYABLE_STATUS_CODES:
+        return True
+    return False
 
-        # Push directly to the writer queue, dropping logprobs entirely
+async def get_response(idx, prompt, client, model, max_length, temperature, semaphore, queue, use_reasoning=True, max_retries=7):
+    """Fetches the response with exponential backoff on transient errors."""
+    async with semaphore:
+        prompt = sanitize_messages(prompt)
+        kwargs = dict(
+            model=model,
+            messages=prompt,
+            max_tokens=max_length,
+            temperature=temperature,
+        )
+        if use_reasoning:
+            kwargs["extra_body"] = {"chat_template_kwargs": {"enable_thinking": False}}
+
+        content = ""
+        for attempt in range(max_retries + 1):
+            try:
+                res = await client.chat.completions.create(**kwargs)
+                content = res.choices[0].message.content
+                break
+            except Exception as e:
+                if _is_retryable(e) and attempt < max_retries:
+                    delay = min(2 ** attempt, 120) + random.uniform(0, 1)
+                    print(f"[retry {attempt+1}/{max_retries}] index {idx}: {e} — retrying in {delay:.1f}s")
+                    await asyncio.sleep(delay)
+                else:
+                    print(f"Error for index {idx} (after {attempt+1} attempts): {e}")
+                    break
+
         await queue.put({
             "index": idx,
             "response": content
@@ -98,7 +113,7 @@ async def main(args):
     if os.path.exists(args.dataset_path):
         dataset = load_from_disk(args.dataset_path)
     else:
-        dataset = load_dataset(args.dataset_path, split="train")
+        dataset = load_dataset(args.dataset_path, split=args.split)
         
     os.makedirs(args.output_dir, exist_ok=True)
     output_jsonl = os.path.join(args.output_dir, "responses.jsonl")
@@ -175,7 +190,7 @@ async def main(args):
     print(f"🚀 Processing {len(valid_indices)} prompts...")
     use_reasoning = not args.no_reasoning_kwargs
     tasks = [
-        get_response(idx, all_prompts[idx], client, args.model, args.max_length, args.temperature, semaphore, queue, use_reasoning) 
+        get_response(idx, all_prompts[idx], client, args.model, args.max_length, args.temperature, semaphore, queue, use_reasoning, args.max_retries) 
         for idx in valid_indices
     ]
     
@@ -227,13 +242,15 @@ if __name__ == "__main__":
     parser.add_argument("--model", type=str, required=True)
     parser.add_argument("--max-tokens", type=int, default=None)
     parser.add_argument("--max-length", type=int, default=4096)
+    parser.add_argument("--split", type=str, default="train")
     
     # Increased default concurrency to better saturate the 16 nodes
-    parser.add_argument("--concurrent", type=int, default=2000)
+    parser.add_argument("--concurrent", type=int, default=200)
     parser.add_argument("--base-url", type=str, default="https://serving.swissai.cscs.ch/")
     parser.add_argument("--temperature", type=float, default=1.0)
     parser.add_argument("--no-reasoning-kwargs", action="store_true", help="Disable passing chat_template_kwargs (needed for Mistral tokenizers)")
     parser.add_argument("--retry-existing", action="store_true", help="Retry samples whose saved response is empty in responses.jsonl or an existing response column")
+    parser.add_argument("--max-retries", type=int, default=7, help="Max retries per request on transient errors (503, 429, timeouts, etc.)")
     args = parser.parse_args()
 
     asyncio.run(main(args))
