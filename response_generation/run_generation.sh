@@ -39,6 +39,7 @@ SPLIT="test"
 ACCOUNT="infra01"
 # RESERVATION="PA-2338-RL"
 LOGS_DIR="./logs/generation"
+HF_SECRETS_FILE="${HF_SECRETS_FILE:-$HOME/.hf_secrets}"
 
 mkdir -p $LOGS_DIR
 
@@ -67,7 +68,7 @@ for ENTRY in "${JOBS[@]}"; do
 #SBATCH --mail-type=END,FAIL 
 ##SBATCH --mail-user=leoschmidt@ethz.ch               # Uncomment and replace with you email if you want to be notified
 
-srun --environment="completion-generation" --container-writable --container-workdir="$PWD" \\
+srun --environment="./response_generation/env/alignment.toml" --container-writable --container-workdir="$PWD" \\
     bash -c "unset SSL_CERT_FILE && python -u response_generation/run_generation.py \\
     --dataset '${INPUT_DATASET}' \\
     --prompt-column-name '${PROMPT_COLUMN_NAME}' \\
