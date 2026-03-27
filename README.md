@@ -9,7 +9,11 @@ The data pipeline is split into 2 stages: preprocessing and response generation.
 In the pre-processing stage, transform our datasets into a standardized format containing the following columns:
 `prompt`, `reference`, `data_source`, `data_source_id`, `meta_information` and `turn`.
 
-We implement a batched mapping function for each individual dataset.
+We implement a batched mapping function for each individual dataset (batched mapping allows to create additional rows or remove rows, useful for filtering and multi-turn datasets).
+The preprocessing runner can take multiple datasets, combine them split-wise, and deduplicate the final output by `prompt`. Deduplication keeps the first occurrence of a prompt and drops later duplicates, regardless of the reference text.
+
+
+For the batch wrapper, use `DATASETS` and `MAPPERS` as comma-separated lists when you want to preprocess and deduplicate multiple sources in one run.
 
 ## Response-generation
 The response generation stage then uses the `prompt` and `reference` columns to create `answer`, `thinking`, `generation_model` and `generation_meta` columns.

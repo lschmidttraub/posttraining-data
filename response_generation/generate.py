@@ -279,7 +279,7 @@ if __name__ == "__main__":
     parser.add_argument("--split", type=str, default="train")
     
     # Increased default concurrency to better saturate the 16 nodes
-    parser.add_argument("--concurrent", type=int, default=128)
+    parser.add_argument("--concurrent", type=int, default=2000)
     parser.add_argument("--base-url", type=str, default="https://serving.swissai.cscs.ch/")
     parser.add_argument("--temperature", type=float, default=1.0)
     parser.add_argument("--no-reasoning-kwargs", action="store_true", help="Disable passing chat_template_kwargs (needed for Mistral tokenizers)")

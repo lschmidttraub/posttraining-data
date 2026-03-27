@@ -8,9 +8,6 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-cd "${REPO_ROOT}"
 mkdir -p logs/download
 
 if [ "$#" -lt 1 ]; then
@@ -21,16 +18,14 @@ fi
 MODEL_ID="$1"
 MODEL_SLUG="${MODEL_ID//\//_}"
 
-SCRATCH_ROOT="${SCRATCH:-/tmp}"
-export HF_HOME="${HF_HOME:-${SCRATCH_ROOT}/hf_home}"
-if [ -n "${HF_TOKEN:-}" ] && [ -z "${HUGGINGFACE_HUB_TOKEN:-}" ]; then
+if [ -n "${HF_TOKEN}" ] && [ -z "${HUGGINGFACE_HUB_TOKEN:-}" ]; then
   export HUGGINGFACE_HUB_TOKEN="${HF_TOKEN}"
 fi
 if [ -n "${HUGGINGFACE_HUB_TOKEN:-}" ] && [ -z "${HF_TOKEN:-}" ]; then
   export HF_TOKEN="${HUGGINGFACE_HUB_TOKEN}"
 fi
 
-LOCAL_DIR="${2:-${SCRATCH_ROOT}/models/${MODEL_SLUG}}"
+LOCAL_DIR="${2:-${SCRATCH}/models/${MODEL_SLUG}}"
 
 mkdir -p "${HF_HOME}/hub"
 mkdir -p "${LOCAL_DIR}"
@@ -65,9 +60,7 @@ model_id = '${MODEL_ID}'
 path = snapshot_download(
     repo_id=model_id,
     local_dir=local_dir,
-    local_dir_use_symlinks=False,
     max_workers=2,
-    resume_download=True,
 )
 print(path)
 PY"

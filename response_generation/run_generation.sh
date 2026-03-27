@@ -25,13 +25,15 @@ JOBS=(
   # "utter-project/EuroLLM-1.7B-Instruct 1 1 1 4 1 false sglang false"
   # "utter-project/EuroLLM-9B-Instruct-2512 1 1 1 4 1 false sglang false"
   # "utter-project/EuroLLM-22B-Instruct-2512 1 1 1 4 1 false sglang false"
-  "${SCRATCH}/models/Qwen_Qwen3.5-397B-A17B 4 1 4 1 16 true vllm false"
+  "${SCRATCH}/models/Qwen_Qwen3.5-397B-A17B 8 2 4 1 16 true vllm false"
   # "mistralai/Mistral-Large-3-675B-Instruct-2512 32 8 4 1 16 true vllm true"
 )
 
 INPUT_DATASET="${INPUT_DATASET:-Salesforce/xlam-function-calling-60k}"
+INPUT_DATASETS="${INPUT_DATASETS:-}"
 PREPROCESS="${PREPROCESS:-1}"
 PREPROCESS_MAPPER="${PREPROCESS_MAPPER:-Salesforce/xlam-function-calling-60k}"
+PREPROCESS_MAPPERS="${PREPROCESS_MAPPERS:-}"
 PREPROCESSED_DATASET_DIR="${PREPROCESSED_DATASET_DIR:-$SCRATCH/datasets/preprocessed/$(basename "$INPUT_DATASET")}"
 PREPROCESS_BATCH_SIZE="${PREPROCESS_BATCH_SIZE:-1000}"
 PREPROCESS_NUM_PROC="${PREPROCESS_NUM_PROC:-}"
@@ -52,6 +54,28 @@ HF_SECRETS_FILE="${HF_SECRETS_FILE:-$HOME/.hf_secrets}"
 
 mkdir -p $LOGS_DIR
 
+DATASET_FLAGS=()
+if [ -n "${INPUT_DATASETS}" ]; then
+  IFS=',' read -r -a INPUT_DATASET_LIST <<<"${INPUT_DATASETS}"
+  for ITEM in "${INPUT_DATASET_LIST[@]}"; do
+    DATASET_FLAGS+=("--dataset" "${ITEM}")
+  done
+else
+  DATASET_FLAGS+=("--dataset" "${INPUT_DATASET}")
+fi
+printf -v DATASET_FLAGS_STRING "%q " "${DATASET_FLAGS[@]}"
+
+PREPROCESS_MAPPER_FLAGS=()
+if [ -n "${PREPROCESS_MAPPERS}" ]; then
+  IFS=',' read -r -a PREPROCESS_MAPPER_LIST <<<"${PREPROCESS_MAPPERS}"
+  for ITEM in "${PREPROCESS_MAPPER_LIST[@]}"; do
+    PREPROCESS_MAPPER_FLAGS+=("--preprocess-mapper" "${ITEM}")
+  done
+else
+  PREPROCESS_MAPPER_FLAGS+=("--preprocess-mapper" "${PREPROCESS_MAPPER}")
+fi
+printf -v PREPROCESS_MAPPER_FLAGS_STRING "%q " "${PREPROCESS_MAPPER_FLAGS[@]}"
+
 for ENTRY in "${JOBS[@]}"; do
   read -r MODEL NNODES WORKERS NPW DP TP DOCF FRAMEWORK NO_REASONING <<<"$ENTRY"
   SAFE_MODEL_NAME=$(basename $MODEL)
@@ -67,7 +91,7 @@ for ENTRY in "${JOBS[@]}"; do
 
   PREPROCESS_FLAG=""
   if [ "$PREPROCESS" -eq 1 ]; then
-    PREPROCESS_FLAG="--preprocess --preprocess-mapper '${PREPROCESS_MAPPER}' --preprocessed-dataset-dir '${PREPROCESSED_DATASET_DIR}' --preprocess-batch-size ${PREPROCESS_BATCH_SIZE}"
+    PREPROCESS_FLAG="--preprocess ${PREPROCESS_MAPPER_FLAGS_STRING} --preprocessed-dataset-dir '${PREPROCESSED_DATASET_DIR}' --preprocess-batch-size ${PREPROCESS_BATCH_SIZE}"
     if [ -n "${PREPROCESS_NUM_PROC}" ]; then
       PREPROCESS_FLAG="${PREPROCESS_FLAG} --preprocess-num-proc ${PREPROCESS_NUM_PROC}"
     fi
@@ -85,7 +109,7 @@ for ENTRY in "${JOBS[@]}"; do
 
 srun --environment="./response_generation/env/alignment.toml" --container-writable --container-workdir="$PWD" \\
     bash -c "unset SSL_CERT_FILE && python -u response_generation/run_generation.py \\
-    --dataset '${INPUT_DATASET}' \\
+    ${DATASET_FLAGS_STRING} \\
     --base-output-dir '${BASE_OUTPUT_DIR}' \\
     --logs-dir '${LOGS_DIR}/server' \\
     --model '${MODEL}' \\
