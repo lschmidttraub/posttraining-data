@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import asyncio
 import argparse
@@ -6,12 +7,26 @@ import httpx
 import uvloop
 from openai import AsyncOpenAI
 from datasets import load_from_disk, load_dataset
+from datasets.dataset_dict import DatasetDict
 from transformers import AutoTokenizer
 from tqdm.asyncio import tqdm_asyncio
 
 def has_saved_response(response):
     """Return True when a saved response contains non-whitespace text."""
     return isinstance(response, str) and bool(response.strip())
+
+def parse_thinking(content):
+    """Split a <think>...</think> block from the final answer.
+
+    Returns (thinking, answer). If no thinking tags are present, thinking is
+    an empty string and the full content is returned as the answer.
+    """
+    if not content:
+        return "", ""
+    match = re.search(r"<think>(.*?)</think>(.*)", content, re.DOTALL)
+    if match:
+        return match.group(1).strip(), match.group(2).strip()
+    return "", content.strip()
 
 def sanitize_messages(messages):
     """Strip all non-standard fields from messages to avoid vLLM/Mistral validation errors."""
@@ -69,10 +84,11 @@ async def get_response(idx, prompt, client, model, max_length, temperature, sema
             print(f"Error for index {idx}: {e}")
             content = ""
 
-        # Push directly to the writer queue, dropping logprobs entirely
+        thinking, answer = parse_thinking(content)
         await queue.put({
             "index": idx,
-            "response": content
+            "thinking": thinking,
+            "answer": answer,
         })
 
 async def main(args):
@@ -97,6 +113,14 @@ async def main(args):
     # 2. Load Dataset
     if os.path.exists(args.dataset_path):
         dataset = load_from_disk(args.dataset_path)
+        if isinstance(dataset, DatasetDict):
+            if args.split not in dataset:
+                available_splits = ", ".join(dataset.keys())
+                raise ValueError(
+                    f"Split '{args.split}' not found in local dataset at {args.dataset_path}. "
+                    f"Available splits: {available_splits}"
+                )
+            dataset = dataset[args.split]
     else:
         dataset = load_dataset(args.dataset_path, split=args.split)
         
@@ -110,14 +134,14 @@ async def main(args):
             for line in f:
                 if line.strip():
                     data = json.loads(line)
-                    existing_responses[data["index"]] = data.get("response", "")
+                    existing_responses[data["index"]] = data.get("answer", "")
         print(f"✅ Resuming from checkpoint: Found {len(existing_responses)} saved items in responses.jsonl.")
-    elif args.retry_existing and "response" in dataset.column_names:
+    elif args.retry_existing and "answer" in dataset.column_names:
         existing_responses = {
-            idx: response
-            for idx, response in enumerate(dataset["response"])
+            idx: answer
+            for idx, answer in enumerate(dataset["answer"])
         }
-        print(f"✅ Found {len(existing_responses)} saved items in the dataset response column.")
+        print(f"✅ Found {len(existing_responses)} saved items in the dataset answer column.")
 
     processed_indices = set(existing_responses)
     empty_response_indices = {
@@ -196,19 +220,44 @@ async def main(args):
     print(f"💾 Reconstructing and saving final dataset to {args.output_dir}")
     
     # Load everything back into ordered memory just once at the end
-    if "response" in dataset.column_names:
-        final_responses = list(dataset["response"])
+    if "answer" in dataset.column_names:
+        final_answers = list(dataset["answer"])
     else:
-        final_responses = [""] * len(dataset)
+        final_answers = [""] * len(dataset)
+    if "thinking" in dataset.column_names:
+        final_thinking = list(dataset["thinking"])
+    else:
+        final_thinking = [""] * len(dataset)
+
     with open(output_jsonl, "r", encoding="utf-8") as f:
         for line in f:
             if line.strip():
                 data = json.loads(line)
-                final_responses[data["index"]] = data["response"]
+                final_answers[data["index"]] = data.get("answer", "")
+                final_thinking[data["index"]] = data.get("thinking", "")
 
-    if "response" in dataset.column_names:
-        dataset = dataset.remove_columns("response")
-    dataset = dataset.add_column("response", final_responses)
+    if "answer" in dataset.column_names:
+        dataset = dataset.remove_columns("answer")
+    dataset = dataset.add_column("answer", final_answers)
+
+    if "thinking" in dataset.column_names:
+        dataset = dataset.remove_columns("thinking")
+    dataset = dataset.add_column("thinking", final_thinking)
+
+    if "generation_model" in dataset.column_names:
+        dataset = dataset.remove_columns("generation_model")
+    dataset = dataset.add_column("generation_model", [args.model] * len(dataset))
+
+    generation_meta = json.dumps({
+        "temperature": args.temperature,
+        "max_length": args.max_length,
+        "base_url": args.base_url,
+        "concurrent": args.concurrent,
+    })
+    if "generation_meta" in dataset.column_names:
+        dataset = dataset.remove_columns("generation_meta")
+    dataset = dataset.add_column("generation_meta", [generation_meta] * len(dataset))
+
     dataset.save_to_disk(args.output_dir)
 
     with open(os.path.join(args.output_dir, "model_used.txt"), "w") as f:
@@ -230,7 +279,7 @@ if __name__ == "__main__":
     parser.add_argument("--split", type=str, default="train")
     
     # Increased default concurrency to better saturate the 16 nodes
-    parser.add_argument("--concurrent", type=int, default=2000)
+    parser.add_argument("--concurrent", type=int, default=128)
     parser.add_argument("--base-url", type=str, default="https://serving.swissai.cscs.ch/")
     parser.add_argument("--temperature", type=float, default=1.0)
     parser.add_argument("--no-reasoning-kwargs", action="store_true", help="Disable passing chat_template_kwargs (needed for Mistral tokenizers)")

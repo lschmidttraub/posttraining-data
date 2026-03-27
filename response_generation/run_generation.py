@@ -6,6 +6,41 @@ import argparse
 import subprocess
 import urllib.request
 
+
+def maybe_preprocess_dataset(args):
+    if not args.preprocess:
+        return args.dataset
+
+    if not args.preprocess_mapper:
+        raise ValueError("--preprocess-mapper is required when --preprocess is set")
+    if not args.preprocessed_dataset_dir:
+        raise ValueError("--preprocessed-dataset-dir is required when --preprocess is set")
+
+    preprocess_cmd = [
+        "python",
+        "-u",
+        "-m",
+        "preprocessing.run",
+        "--dataset",
+        args.dataset,
+        "--mapper",
+        args.preprocess_mapper,
+        "--output-dir",
+        args.preprocessed_dataset_dir,
+        "--split",
+        args.split,
+        "--batch-size",
+        str(args.preprocess_batch_size),
+    ]
+    if args.preprocess_num_proc is not None:
+        preprocess_cmd.extend(["--num-proc", str(args.preprocess_num_proc)])
+
+    print(f"🚀 Preprocessing dataset: {' '.join(preprocess_cmd)}")
+    subprocess.run(preprocess_cmd, check=True)
+    print(f"✅ Preprocessed dataset saved to: {args.preprocessed_dataset_dir}")
+    return args.preprocessed_dataset_dir
+
+
 def main():
     parser = argparse.ArgumentParser(description="Orchestrate SGLang server and Generation")
     parser.add_argument("--model", type=str, required=True)
@@ -24,14 +59,21 @@ def main():
     parser.add_argument("--dp-size", type=int, default=1)
     parser.add_argument("--tp-size", type=int, default=1)
     parser.add_argument("--disable-ocf", action="store_true", help="Disable OCF optimization")
+    parser.add_argument("--enforce-eager", action="store_true", help="Disable compilation/CUDA graphs in vLLM")
     parser.add_argument("--framework", type=str, default="sglang", help="Serving framework (e.g., sglang, vllm)")
     parser.add_argument("--no-reasoning-kwargs", action="store_true", help="Disable passing chat_template_kwargs for reasoning")
     parser.add_argument("--env", type=str, help="Optional environment name for job submission (e.g., vllm_qwen35)", required=False)
     parser.add_argument("--split", type=str, default="train", help="Split of the dataset to use")
     parser.add_argument("--base-url", type=str, help="Base URL for the model server (overrides auto-discovery)", required=False)
+    parser.add_argument("--preprocess", action="store_true", help="Preprocess the dataset before generation")
+    parser.add_argument("--preprocess-mapper", type=str, default=None, help="Mapper to use for preprocessing")
+    parser.add_argument("--preprocessed-dataset-dir", type=str, default=None, help="Output directory for the preprocessed dataset")
+    parser.add_argument("--preprocess-batch-size", type=int, default=1000, help="Batch size for preprocessing")
+    parser.add_argument("--preprocess-num-proc", type=int, default=None, help="Optional number of preprocessing worker processes")
 
 
     args = parser.parse_args()
+    dataset_path = maybe_preprocess_dataset(args)
     model_short = args.model.split("/")[-1]
     scratch = os.environ.get("SCRATCH", "/tmp")
     os.makedirs(args.logs_dir, exist_ok=True)
@@ -68,6 +110,8 @@ def main():
             fw_args = f"--model-path {args.model} --host 0.0.0.0 --port 8080 --served-model-name {args.model} --dp-size {args.dp_size} --tp-size {args.tp_size} --trust-remote-code"
         elif args.framework == "vllm":
             fw_args = f"--model {args.model} --host 0.0.0.0 --port 8080 --served-model-name {args.model} --data-parallel-size {args.dp_size} --tensor-parallel-size {args.tp_size} --trust-remote-code"
+            if args.enforce_eager:
+                fw_args += " --enforce-eager"
             if "mistral" in args.model.lower():
                 fw_args += " --tokenizer_mode mistral --load_format mistral --config_format mistral"
         else:
@@ -157,7 +201,7 @@ def main():
     output_dir = os.path.join(args.base_output_dir, model_short)
     gen_cmd = [
         "python", "response_generation/generate.py",
-        "--dataset-path", args.dataset,
+        "--dataset-path", dataset_path,
         "--prompt-column-name", args.prompt_column_name,
         "--split", args.split,
         "--output-dir", output_dir,

@@ -21,10 +21,6 @@ fi
 MODEL_ID="$1"
 MODEL_SLUG="${MODEL_ID//\//_}"
 
-if [ -f "${HOME}/.hf_secrets" ]; then
-  source "${HOME}/.hf_secrets"
-fi
-
 SCRATCH_ROOT="${SCRATCH:-/tmp}"
 export HF_HOME="${HF_HOME:-${SCRATCH_ROOT}/hf_home}"
 if [ -n "${HF_TOKEN:-}" ] && [ -z "${HUGGINGFACE_HUB_TOKEN:-}" ]; then

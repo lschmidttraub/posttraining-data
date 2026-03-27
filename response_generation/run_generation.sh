@@ -25,16 +25,25 @@ JOBS=(
   # "utter-project/EuroLLM-1.7B-Instruct 1 1 1 4 1 false sglang false"
   # "utter-project/EuroLLM-9B-Instruct-2512 1 1 1 4 1 false sglang false"
   # "utter-project/EuroLLM-22B-Instruct-2512 1 1 1 4 1 false sglang false"
-  "Qwen/Qwen3.5-397B-A17B 32 8 4 1 16 true vllm false"
+  "${SCRATCH}/models/Qwen_Qwen3.5-397B-A17B 4 1 4 1 16 true vllm false"
   # "mistralai/Mistral-Large-3-675B-Instruct-2512 32 8 4 1 16 true vllm true"
 )
 
-INPUT_DATASET="KbsdJames/Omni-MATH"
-BASE_OUTPUT_DIR="$SCRATCH/datasets/completions/$INPUT_DATASET"
-PROMPT_COLUMN_NAME="problem"
+INPUT_DATASET="${INPUT_DATASET:-Salesforce/xlam-function-calling-60k}"
+PREPROCESS="${PREPROCESS:-1}"
+PREPROCESS_MAPPER="${PREPROCESS_MAPPER:-Salesforce/xlam-function-calling-60k}"
+PREPROCESSED_DATASET_DIR="${PREPROCESSED_DATASET_DIR:-$SCRATCH/datasets/preprocessed/$(basename "$INPUT_DATASET")}"
+PREPROCESS_BATCH_SIZE="${PREPROCESS_BATCH_SIZE:-1000}"
+PREPROCESS_NUM_PROC="${PREPROCESS_NUM_PROC:-}"
+if [ "$PREPROCESS" -eq 1 ]; then
+  DATASET_NAME=$(basename "$PREPROCESSED_DATASET_DIR")
+else
+  DATASET_NAME=$(basename "$INPUT_DATASET")
+fi
+BASE_OUTPUT_DIR="${BASE_OUTPUT_DIR:-$SCRATCH/datasets/completions/$DATASET_NAME}"
 REMOVE_LAST_MESSAGE=0 # Set to 1 if you want to remove the last message from the conversation history, e.g. if you take it from a "chosen" column
 JOB_TIME="12:00:00"
-SPLIT="test"
+SPLIT="train"
 
 ACCOUNT="infra01"
 # RESERVATION="PA-2338-RL"
@@ -45,7 +54,7 @@ mkdir -p $LOGS_DIR
 
 for ENTRY in "${JOBS[@]}"; do
   read -r MODEL NNODES WORKERS NPW DP TP DOCF FRAMEWORK NO_REASONING <<<"$ENTRY"
-  SAFE_MODEL_NAME=$(echo "$MODEL" | tr '/' '_')
+  SAFE_MODEL_NAME=$(basename $MODEL)
 
   OCF_FLAG=""
   if [ "$DOCF" = "true" ]; then OCF_FLAG="--disable-ocf"; fi
@@ -56,6 +65,14 @@ for ENTRY in "${JOBS[@]}"; do
   REMOVE_LAST_MESSAGE_FLAG=""
   if [ "$REMOVE_LAST_MESSAGE" -eq 1 ]; then REMOVE_LAST_MESSAGE_FLAG="--remove-last-message"; fi
 
+  PREPROCESS_FLAG=""
+  if [ "$PREPROCESS" -eq 1 ]; then
+    PREPROCESS_FLAG="--preprocess --preprocess-mapper '${PREPROCESS_MAPPER}' --preprocessed-dataset-dir '${PREPROCESSED_DATASET_DIR}' --preprocess-batch-size ${PREPROCESS_BATCH_SIZE}"
+    if [ -n "${PREPROCESS_NUM_PROC}" ]; then
+      PREPROCESS_FLAG="${PREPROCESS_FLAG} --preprocess-num-proc ${PREPROCESS_NUM_PROC}"
+    fi
+  fi
+
   sbatch <<EOF
 #!/bin/bash
 #SBATCH --job-name=gen_${SAFE_MODEL_NAME}
@@ -65,13 +82,10 @@ for ENTRY in "${JOBS[@]}"; do
 ##SBATCH --reservation=${RESERVATION}                 # Uncomment if you have a reservation to use
 #SBATCH --partition=normal
 #SBATCH --nodes=1
-#SBATCH --mail-type=END,FAIL 
-##SBATCH --mail-user=leoschmidt@ethz.ch               # Uncomment and replace with you email if you want to be notified
 
 srun --environment="./response_generation/env/alignment.toml" --container-writable --container-workdir="$PWD" \\
     bash -c "unset SSL_CERT_FILE && python -u response_generation/run_generation.py \\
     --dataset '${INPUT_DATASET}' \\
-    --prompt-column-name '${PROMPT_COLUMN_NAME}' \\
     --base-output-dir '${BASE_OUTPUT_DIR}' \\
     --logs-dir '${LOGS_DIR}/server' \\
     --model '${MODEL}' \\
@@ -84,7 +98,7 @@ srun --environment="./response_generation/env/alignment.toml" --container-writab
     --job-time '${JOB_TIME}' \\
     --account ${ACCOUNT} \\
     --split '${SPLIT}' \\
-    ${OCF_FLAG} ${REASONING_FLAG} ${REMOVE_LAST_MESSAGE_FLAG}"
+    ${OCF_FLAG} ${REASONING_FLAG} ${REMOVE_LAST_MESSAGE_FLAG} ${PREPROCESS_FLAG} --enforce-eager"
 EOF
 done
 
