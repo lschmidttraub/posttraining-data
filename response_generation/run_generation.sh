@@ -4,12 +4,12 @@
 JOBS=(
   # "Qwen/Qwen3-8B 1 1 1 4 1 false sglang false"
   # "Qwen/Qwen3-32B 1 1 1 4 1 false sglang false"
-  "${SCRATCH}/models/Qwen_Qwen3.5-397B-A17B 32 8 4 1 16 true vllm false"
-  # "${SCRATCH}/models/zai-org_GLM-5 32 4 8 1 32 true sglang true"
+  # "${SCRATCH}/models/Qwen_Qwen3.5-397B-A17B 32 8 4 1 16 true vllm false"
+  "${SCRATCH}/models/zai-org_GLM-5 32 4 8 1 32 true sglang true"
 )
 
 CATEGORY="${CATEGORY:-}"
-INPUT_DATASET="${INPUT_DATASET:-/iopsstor/scratch/cscs/lschmidttraub/datasets/preprocessed/science}"
+INPUT_DATASET="${INPUT_DATASET:-$SCRATCH/datasets/chunked/science-chunkA}"
 
 # If category is set, we preprocess the category and use the result for generation
 if [ -n "${CATEGORY}" ]; then

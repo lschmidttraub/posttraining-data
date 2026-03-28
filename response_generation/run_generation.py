@@ -9,9 +9,9 @@ import urllib.request
 
 def maybe_preprocess_dataset(args):
     if not args.preprocess:
-        if not args.dataset or len(args.dataset) != 1:
-            raise ValueError("Exactly one --dataset is required when not using --preprocess")
-        return args.dataset[0]
+        if not args.dataset:
+            raise ValueError("--dataset is required when not using --preprocess")
+        return args.dataset
 
     if not args.preprocess_category:
         raise ValueError("--preprocess-category is required when --preprocess is set")
@@ -24,6 +24,8 @@ def maybe_preprocess_dataset(args):
         "--output-dir", args.preprocessed_dataset_dir,
         "--batch-size", str(args.preprocess_batch_size),
     ]
+    if args.preprocess_num_proc is not None:
+        preprocess_cmd.extend(["--num-proc", str(args.preprocess_num_proc)])
 
     print(f"🚀 Preprocessing dataset: {' '.join(preprocess_cmd)}")
     subprocess.run(preprocess_cmd, check=True)
@@ -35,12 +37,13 @@ def main():
     parser = argparse.ArgumentParser(description="Orchestrate SGLang server and Generation")
     parser.add_argument("--model", type=str, required=True)
     parser.add_argument("--dataset", type=str, default=None, help="Dataset path to use for generation")
+    parser.add_argument("--split", type=str, default="train", help="Split of the dataset to use")
     parser.add_argument("--prompt-column-name", type=str, default="prompt", help="Name of the column in the dataset that contains the prompts")
     parser.add_argument("--remove-last-message", action="store_true", help="Whether to remove the last message from the conversation history")
+
     parser.add_argument("--base-output-dir", type=str, default="./output")
     parser.add_argument("--logs-dir", type=str, default="./logs")
     parser.add_argument("--job-time", type=str, default="12:00:00")
-
     parser.add_argument("--account", type=str, default="infra01")
 
     parser.add_argument("--slurm-nodes", type=int, default=1)
@@ -49,14 +52,15 @@ def main():
     parser.add_argument("--dp-size", type=int, default=1)
     parser.add_argument("--tp-size", type=int, default=1)
     parser.add_argument("--disable-ocf", action="store_true", help="Disable OCF optimization")
+
     parser.add_argument("--enforce-eager", action="store_true", help="Disable compilation/CUDA graphs in vLLM")
+
     parser.add_argument("--framework", type=str, default="sglang", help="Serving framework (e.g., sglang, vllm)")
-    parser.add_argument("--no-reasoning-kwargs", action="store_true", help="Disable passing chat_template_kwargs for reasoning")
     parser.add_argument("--env", type=str, help="Optional environment name for job submission (e.g., vllm_qwen35)", required=False)
     parser.add_argument("--glm", action="store_true", help="Enable GLM-specific serving config (sglang_glm env, EAGLE speculative decoding, custom parsers)")
     parser.add_argument("--pre-launch-cmds", type=str, default=None, help="Commands to run before launching framework (e.g., 'pip install blobfile')")
-    parser.add_argument("--split", type=str, default="train", help="Split of the dataset to use")
     parser.add_argument("--base-url", type=str, help="Base URL for the model server (overrides auto-discovery)", required=False)
+
     parser.add_argument("--preprocess", action="store_true", help="Preprocess a category before generation")
     parser.add_argument("--preprocess-category", type=str, default=None, help="Category key from MAPPER_REGISTRY to preprocess (required with --preprocess)")
     parser.add_argument("--preprocessed-dataset-dir", type=str, default=None, help="Where to save/load the preprocessed dataset (required with --preprocess)")
@@ -211,8 +215,6 @@ def main():
     ]
     if args.remove_last_message:
         gen_cmd.append("--remove-last-message")
-    if args.no_reasoning_kwargs:
-        gen_cmd.append("--no-reasoning-kwargs")
     subprocess.run(gen_cmd, check=True)
     
     subprocess.run(["scancel", job_id])
