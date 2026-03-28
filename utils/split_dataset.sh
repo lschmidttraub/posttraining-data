@@ -5,7 +5,6 @@
 #SBATCH --nodes=1
 #SBATCH --time=04:00:00
 #SBATCH --output=logs/split/dataset_%j.log
-#SBATCH --mail-type=END,FAIL
 
 # Split a local HuggingFace dataset into k chunks of at most MAX_SIZE samples.
 #
@@ -112,7 +111,7 @@ for i in range(k):
     chunk_data = data.select(range(start_idx, end_idx))
     chunk_dataset = DatasetDict({'train': chunk_data})
 
-    suffix = chr(ord('A') + i) if k <= 26 else str(i + 1)
+    suffix = str(i + 1)
     output_name = f'{dataset_name}-chunk{suffix}'
     output_path = output_dir / output_name
 

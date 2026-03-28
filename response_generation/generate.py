@@ -20,10 +20,20 @@ def parse_thinking(content):
 
     Returns (thinking, answer). If no thinking tags are present, thinking is
     an empty string and the full content is returned as the answer.
+
+    Handles three cases:
+    - Standard: <think>...</think>answer
+    - Missing opening tag (GLM): thinking...</think>answer
+    - No tags at all: entire content is the answer
     """
     if not content:
         return "", ""
+    # Standard case: <think>...</think>
     match = re.search(r"<think>(.*?)</think>(.*)", content, re.DOTALL)
+    if match:
+        return match.group(1).strip(), match.group(2).strip()
+    # Missing opening <think> tag (e.g. GLM models)
+    match = re.search(r"^(.*?)</think>(.*)", content, re.DOTALL)
     if match:
         return match.group(1).strip(), match.group(2).strip()
     return "", content.strip()
@@ -77,12 +87,20 @@ async def get_response(idx, prompt, client, model, max_length, temperature, sema
             )
             
             res = await client.chat.completions.create(**kwargs)
-            content = res.choices[0].message.content
+            message = res.choices[0].message
+            content = message.content or ""
+            # SGLang/vLLM separate thinking into reasoning_content for
+            # thinking models (e.g. Qwen3.5, QwQ). Read it if available.
+            reasoning_content = getattr(message, "reasoning_content", None) or ""
         except Exception as e:
             print(f"Error for index {idx}: {e}")
             content = ""
+            reasoning_content = ""
 
         thinking, answer = parse_thinking(content)
+        # Prefer the framework-separated reasoning over inline parsing
+        if reasoning_content:
+            thinking = reasoning_content.strip()
         await queue.put({
             "index": idx,
             "thinking": thinking,
@@ -270,7 +288,7 @@ if __name__ == "__main__":
     parser.add_argument("--output-dir", type=str, required=True)
     parser.add_argument("--model", type=str, required=True)
     parser.add_argument("--max-tokens", type=int, default=None)
-    parser.add_argument("--max-length", type=int, default=4096)
+    parser.add_argument("--max-length", type=int, default=8096)
     parser.add_argument("--split", type=str, default="train")
     
     # Increased default concurrency to better saturate the 16 nodes
