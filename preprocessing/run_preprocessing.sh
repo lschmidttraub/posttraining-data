@@ -1,51 +1,37 @@
 #!/bin/bash
 
-DATASET="${DATASET:-salesforce/xlam-function-calling-60k}"
-DATASETS="${DATASETS:-salesforce/xlam-function-calling-60k,salesforce/xlam-function-calling-60k}"
-MAPPER="${MAPPER:-Salesforce/xlam-function-calling-60k,salesforce/xlam-function-calling-60k}"
-MAPPERS="${MAPPERS:-}"
-OUTPUT_DIR="${OUTPUT_DIR:-${SCRATCH}/datasets/preprocessed/$(basename "${DATASET}")}"
-SPLIT="${SPLIT:-train}"
+# has to be one of the keys in MAPPER_REGISTRY
+CATEGORY="${CATEGORY:-tool_calling}"
+# has to be a comma-separated list of dataset names in the category. If empty, use all datasets in the category.
+DATASETS="${DATASETS:-}"
+NAME="${NAME:-}"
+OUTPUT_DIR="${OUTPUT_DIR:-${SCRATCH}/datasets/preprocessed/${CATEGORY}${NAME:+/${NAME}}}"
+# mapping hyperparameters
 BATCH_SIZE="${BATCH_SIZE:-1000}"
 NUM_PROC="${NUM_PROC:-}"
+
+# HF upload 
 UPLOAD_TO_HUB="${UPLOAD_TO_HUB:-0}"
 HUB_DATASET_ID="${HUB_DATASET_ID:-}"
 HUB_PRIVATE="${HUB_PRIVATE:-0}"
-JOB_TIME="${JOB_TIME:-02:00:00}"
+
+# SLURM job parameters
+JOB_TIME="${JOB_TIME:-12:00:00}"
 ACCOUNT="${ACCOUNT:-infra01}"
 LOGS_DIR="${LOGS_DIR:-./logs/preprocessing}"
-JOB_NAME="${JOB_NAME:-prep_$(echo "${MAPPER}" | tr '/-' '__')}"
-SAFE_NAME="$(echo "${DATASET}" | tr '/-' '__')"
+JOB_NAME="${JOB_NAME:-prep_${CATEGORY}}"
+SAFE_NAME="${CATEGORY}"
 
 mkdir -p "${LOGS_DIR}"
 
-DATASET_FLAGS=()
+CLI_ARGS=("--category" "${CATEGORY}")
 if [ -n "${DATASETS}" ]; then
   IFS=',' read -r -a DATASET_LIST <<<"${DATASETS}"
   for ITEM in "${DATASET_LIST[@]}"; do
-    DATASET_FLAGS+=("--dataset" "${ITEM}")
+    CLI_ARGS+=("--dataset" "${ITEM}")
   done
-else
-  DATASET_FLAGS+=("--dataset" "${DATASET}")
 fi
-
-MAPPER_FLAGS=()
-if [ -n "${MAPPERS}" ]; then
-  IFS=',' read -r -a MAPPER_LIST <<<"${MAPPERS}"
-  for ITEM in "${MAPPER_LIST[@]}"; do
-    MAPPER_FLAGS+=("--mapper" "${ITEM}")
-  done
-else
-  MAPPER_FLAGS+=("--mapper" "${MAPPER}")
-fi
-
-CLI_ARGS=()
-CLI_ARGS+=("${DATASET_FLAGS[@]}")
-CLI_ARGS+=("${MAPPER_FLAGS[@]}")
 CLI_ARGS+=("--output-dir" "${OUTPUT_DIR}")
-if [ -n "${SPLIT}" ]; then
-  CLI_ARGS+=("--split" "${SPLIT}")
-fi
 CLI_ARGS+=("--batch-size" "${BATCH_SIZE}")
 
 NUM_PROC_FLAG=""

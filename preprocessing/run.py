@@ -1,28 +1,18 @@
 import argparse
 import json
 import os
-from collections import defaultdict
 
 from datasets import Dataset, DatasetDict, concatenate_datasets, load_dataset, load_from_disk
 
-from preprocessing.registry import MAPPERS
+from preprocessing.registry import MAPPER_REGISTRY
 from preprocessing.schema import STANDARD_COLUMNS
 
 
-def load_input_dataset(dataset_name: str, split: str | None) -> DatasetDict:
-    if os.path.exists(dataset_name):
-        dataset = load_from_disk(dataset_name)
-    else:
-        if split is None:
-            dataset = load_dataset(dataset_name)
-        else:
-            dataset = DatasetDict({split: load_dataset(dataset_name, split=split)})
-
+def load_input_dataset(dataset_name: str) -> DatasetDict:
+    dataset = load_from_disk(dataset_name) if os.path.exists(dataset_name) else load_dataset(dataset_name)
     if isinstance(dataset, DatasetDict):
         return dataset
-
-    active_split = split or "train"
-    return DatasetDict({active_split: dataset})
+    return DatasetDict({"train": dataset})
 
 
 def normalize_prompt(prompt: object) -> str:
@@ -52,18 +42,23 @@ def deduplicate_by_prompt(dataset: Dataset, desc: str) -> Dataset:
     return deduplicated
 
 
-def validate_parallel_args(
-    datasets: list[str], mappers: list[str], splits: list[str | None]
-) -> list[tuple[str, str, str | None]]:
-    if len(mappers) not in (1, len(datasets)):
-        raise ValueError("Provide either one --mapper for all datasets or one --mapper per --dataset")
+def resolve_category_specs(category: str, datasets: list[str]) -> list[tuple[str, str]]:
+    category_mappers = MAPPER_REGISTRY[category]
+    if not category_mappers:
+        raise ValueError(f"Category '{category}' has no registered mappers")
 
-    if len(splits) not in (0, 1, len(datasets)):
-        raise ValueError("Provide either one --split for all datasets or one --split per --dataset")
+    if datasets:
+        unknown = [d for d in datasets if d not in category_mappers]
+        if unknown:
+            raise ValueError(
+                f"Dataset(s) not registered under category '{category}': {unknown}. "
+                f"Available: {sorted(category_mappers)}"
+            )
+        selected = datasets
+    else:
+        selected = list(category_mappers.keys())
 
-    resolved_mappers = mappers if len(mappers) == len(datasets) else mappers * len(datasets)
-    resolved_splits = splits if len(splits) == len(datasets) else (splits * len(datasets) if splits else [None] * len(datasets))
-    return list(zip(datasets, resolved_mappers, resolved_splits))
+    return [(dataset, dataset) for dataset in selected]
 
 
 def parse_args() -> argparse.Namespace:
@@ -71,25 +66,21 @@ def parse_args() -> argparse.Namespace:
         description="Map one or more datasets into the standardized preprocessing schema and combine them."
     )
     parser.add_argument(
+        "--category",
+        choices=sorted(MAPPER_REGISTRY),
+        required=True,
+        help="Category key from MAPPER_REGISTRY. All datasets in the category are processed by default.",
+    )
+    parser.add_argument(
         "--dataset",
         action="append",
-        required=True,
-        help="HuggingFace dataset name or local dataset path. Repeat for multiple datasets.",
-    )
-    parser.add_argument(
-        "--mapper",
-        action="append",
-        required=True,
-        choices=sorted(MAPPERS),
-        help="Mapper function to apply. Repeat to align with multiple --dataset values.",
+        default=[],
+        help=(
+            "Restrict processing to this dataset name (must be registered in the category). "
+            "Repeat to select multiple. Defaults to all datasets in the category."
+        ),
     )
     parser.add_argument("--output-dir", required=True, help="Directory where the processed dataset will be saved")
-    parser.add_argument(
-        "--split",
-        action="append",
-        default=[],
-        help="Optional split name when loading from the Hub. Repeat to align with multiple --dataset values.",
-    )
     parser.add_argument("--batch-size", type=int, default=1000, help="Batch size for dataset.map")
     parser.add_argument("--num-proc", type=int, default=None, help="Optional number of worker processes for dataset.map")
     parser.add_argument("--upload-to-hub", action="store_true", help="Upload the processed dataset to the Hugging Face Hub")
@@ -100,12 +91,15 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    dataset_specs = validate_parallel_args(args.dataset, args.mapper, args.split)
 
-    processed_splits: dict[str, list[Dataset]] = defaultdict(list)
-    for dataset_name, mapper_name, split in dataset_specs:
-        mapper = MAPPERS[mapper_name]
-        dataset = load_input_dataset(dataset_name, split)
+    dataset_specs = resolve_category_specs(args.category, args.dataset)
+
+    category_mappers = MAPPER_REGISTRY[args.category]
+
+    all_processed: list[Dataset] = []
+    for dataset_name, mapper_name in dataset_specs:
+        mapper = category_mappers[mapper_name]
+        dataset = load_input_dataset(dataset_name)
 
         for split_name, split_dataset in dataset.items():
             processed_split = split_dataset.map(
@@ -117,15 +111,11 @@ def main() -> None:
                 remove_columns=split_dataset.column_names,
                 desc=f"Preprocessing {dataset_name}:{split_name}",
             ).select_columns(STANDARD_COLUMNS)
-            processed_splits[split_name].append(processed_split)
+            all_processed.append(processed_split)
 
-    processed = DatasetDict()
-    for split_name, split_datasets in processed_splits.items():
-        combined_split = split_datasets[0] if len(split_datasets) == 1 else concatenate_datasets(split_datasets)
-        processed[split_name] = deduplicate_by_prompt(
-            combined_split,
-            desc=f"Deduplicating prompt rows in split '{split_name}'",
-        )
+    combined = all_processed[0] if len(all_processed) == 1 else concatenate_datasets(all_processed)
+    train_split = deduplicate_by_prompt(combined, desc="Deduplicating prompt rows")
+    processed = DatasetDict({"train": train_split})
 
     os.makedirs(args.output_dir, exist_ok=True)
     processed.save_to_disk(args.output_dir)

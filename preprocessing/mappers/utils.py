@@ -22,7 +22,12 @@ def normalize_argument_value(value: Any) -> Any:
 def format_tool_prompt(tools: list[dict[str, Any]], query: str) -> list[dict[str, str]]:
     system_content = (
         "You are a helpful assistant with access to tools. "
-        "Return the correct tool call or tool calls for the user's request.\n\n"
+        "When the user's request requires tool calls, respond with a JSON array of tool calls. "
+        "Each tool call must be an object with \"name\" (the function name) and \"arguments\" "
+        "(an object of parameter names to values). Do not include any other text, code fences, "
+        "or formatting — only the raw JSON array.\n\n"
+        "Example response format:\n"
+        '[{"name": "function_name", "arguments": {"param1": "value1", "param2": 2}}]\n\n'
         "Available tools:\n"
         f"{json.dumps(tools, ensure_ascii=True, indent=2)}"
     )
