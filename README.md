@@ -80,7 +80,7 @@ The output dataset extends the preprocessing schema with four additional columns
 
 `run_generation.sh` submits a single-node SLURM client job per model listed in `JOBS`. Each job runs `run_generation.py`, which orchestrates the following steps:
 
-1. **(Optional) Preprocessing** — if `PREPROCESS=1`, `run_generation.py` calls `preprocessing/run.py` inline before generation to avoid storing an intermediate dataset.
+1. **(Optional) Preprocessing** — if `CATEGORY` isn't empty, `run_generation.py` preprocesses the given `CATEGORY`.
 2. **Server launch** — submits a separate SLURM job via `$SCRATCH/model-launch` that starts a vLLM or SGLang server and waits for it to register its URL in the job log.
 3. **Health check** — polls the server's `/health` endpoint, then sends a small probe inference request to confirm the full pipeline (including any router) is operational.
 4. **Async generation** — `generate.py` streams requests to the server's `/v1/chat/completions` endpoint with up to `--concurrent` (default 2000) requests in flight simultaneously. Responses are written to `responses.jsonl` immediately as they arrive, so the run is resumable if interrupted.
@@ -104,8 +104,7 @@ Key environment variables:
 | Variable |  Description |
 |---|---|
 | `INPUT_DATASET` | HuggingFace dataset to generate responses for |
-| `INPUT_DATASETS` | Comma-separated list of datasets (requires `PREPROCESS=1`) |
-| `PREPROCESS` | Set to `1` preprocess as well (not recommended) |
+| `CATEGORY` | Set to preprocess category and generate on result instead of using `INPUT_DATASET`  |
 | `PREPROCESS_MAPPER`  | Mapper name for inline preprocessing |
 | `PREPROCESSED_DATASET_DIR`  | Where to save/read the preprocessed dataset |
 | `BASE_OUTPUT_DIR` | Root output directory; model name is appended as a subdirectory |

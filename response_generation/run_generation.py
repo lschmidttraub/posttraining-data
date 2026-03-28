@@ -9,33 +9,21 @@ import urllib.request
 
 def maybe_preprocess_dataset(args):
     if not args.preprocess:
-        if len(args.dataset) != 1:
-            raise ValueError("Multiple --dataset values require --preprocess so they can be combined first")
+        if not args.dataset or len(args.dataset) != 1:
+            raise ValueError("Exactly one --dataset is required when not using --preprocess")
         return args.dataset[0]
 
-    if not args.preprocess_mapper:
-        raise ValueError("--preprocess-mapper is required when --preprocess is set")
+    if not args.preprocess_category:
+        raise ValueError("--preprocess-category is required when --preprocess is set")
     if not args.preprocessed_dataset_dir:
         raise ValueError("--preprocessed-dataset-dir is required when --preprocess is set")
 
     preprocess_cmd = [
-        "python",
-        "-u",
-        "-m",
-        "preprocessing.run",
-        "--output-dir",
-        args.preprocessed_dataset_dir,
-        "--batch-size",
-        str(args.preprocess_batch_size),
+        "python", "-u", "-m", "preprocessing.run",
+        "--category", args.preprocess_category,
+        "--output-dir", args.preprocessed_dataset_dir,
+        "--batch-size", str(args.preprocess_batch_size),
     ]
-    for dataset_name in args.dataset:
-        preprocess_cmd.extend(["--dataset", dataset_name])
-    for mapper_name in args.preprocess_mapper:
-        preprocess_cmd.extend(["--mapper", mapper_name])
-    if args.split is not None:
-        preprocess_cmd.extend(["--split", args.split])
-    if args.preprocess_num_proc is not None:
-        preprocess_cmd.extend(["--num-proc", str(args.preprocess_num_proc)])
 
     print(f"🚀 Preprocessing dataset: {' '.join(preprocess_cmd)}")
     subprocess.run(preprocess_cmd, check=True)
@@ -46,7 +34,7 @@ def maybe_preprocess_dataset(args):
 def main():
     parser = argparse.ArgumentParser(description="Orchestrate SGLang server and Generation")
     parser.add_argument("--model", type=str, required=True)
-    parser.add_argument("--dataset", action="append", default=None, help="Repeat to combine multiple datasets during preprocessing")
+    parser.add_argument("--dataset", type=str, default=None, help="Dataset path to use for generation")
     parser.add_argument("--prompt-column-name", type=str, default="prompt", help="Name of the column in the dataset that contains the prompts")
     parser.add_argument("--remove-last-message", action="store_true", help="Whether to remove the last message from the conversation history")
     parser.add_argument("--base-output-dir", type=str, default="./output")
@@ -69,21 +57,14 @@ def main():
     parser.add_argument("--pre-launch-cmds", type=str, default=None, help="Commands to run before launching framework (e.g., 'pip install blobfile')")
     parser.add_argument("--split", type=str, default="train", help="Split of the dataset to use")
     parser.add_argument("--base-url", type=str, help="Base URL for the model server (overrides auto-discovery)", required=False)
-    parser.add_argument("--preprocess", action="store_true", help="Preprocess the dataset before generation")
-    parser.add_argument(
-        "--preprocess-mapper",
-        action="append",
-        default=None,
-        help="Mapper to use for preprocessing. Repeat to align with repeated --dataset values.",
-    )
-    parser.add_argument("--preprocessed-dataset-dir", type=str, default=None, help="Output directory for the preprocessed dataset")
+    parser.add_argument("--preprocess", action="store_true", help="Preprocess a category before generation")
+    parser.add_argument("--preprocess-category", type=str, default=None, help="Category key from MAPPER_REGISTRY to preprocess (required with --preprocess)")
+    parser.add_argument("--preprocessed-dataset-dir", type=str, default=None, help="Where to save/load the preprocessed dataset (required with --preprocess)")
     parser.add_argument("--preprocess-batch-size", type=int, default=1000, help="Batch size for preprocessing")
     parser.add_argument("--preprocess-num-proc", type=int, default=None, help="Optional number of preprocessing worker processes")
 
 
     args = parser.parse_args()
-    if args.dataset is None:
-        args.dataset = ["allenai/Dolci-Instruct-DPO"]
     dataset_path = maybe_preprocess_dataset(args)
     model_short = args.model.split("/")[-1]
     scratch = os.environ.get("SCRATCH", "/tmp")

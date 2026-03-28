@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # has to be one of the keys in MAPPER_REGISTRY
-CATEGORY="${CATEGORY:-tool_calling}"
+CATEGORY="${CATEGORY:-}"
 # has to be a comma-separated list of dataset names in the category. If empty, use all datasets in the category.
 DATASETS="${DATASETS:-}"
 NAME="${NAME:-}"
@@ -13,7 +13,7 @@ NUM_PROC="${NUM_PROC:-}"
 # HF upload 
 UPLOAD_TO_HUB="${UPLOAD_TO_HUB:-0}"
 HUB_DATASET_ID="${HUB_DATASET_ID:-}"
-HUB_PRIVATE="${HUB_PRIVATE:-0}"
+HUB_PRIVATE="${HUB_PRIVATE:-1}"
 
 # SLURM job parameters
 JOB_TIME="${JOB_TIME:-12:00:00}"
@@ -23,6 +23,11 @@ JOB_NAME="${JOB_NAME:-prep_${CATEGORY}}"
 SAFE_NAME="${CATEGORY}"
 
 mkdir -p "${LOGS_DIR}"
+
+if [ -z "${CATEGORY}" ]; then
+  echo "CATEGORY not set"
+  exit 1
+fi
 
 CLI_ARGS=("--category" "${CATEGORY}")
 if [ -n "${DATASETS}" ]; then

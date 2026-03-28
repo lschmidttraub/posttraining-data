@@ -14,7 +14,7 @@ Each tool call must be an object with "name" (the function name) and "arguments"
 or formatting — only the raw JSON array.
 
 Example response format:
-[{"name": "function_name", "arguments": {"param1": "value1", "param2": 2}}]
+[{{"name": "function_name", "arguments": {{"param1": "value1", "param2": 2}}}}]
 
 Available tools:
 {tools}
