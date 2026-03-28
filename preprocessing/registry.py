@@ -5,15 +5,15 @@ from preprocessing.mappers.science.multi_subject_rlvr import map_multi_subject_r
 from preprocessing.mappers.science.natural_reasoning import map_natural_reasoning
 from preprocessing.mappers.science.nemotron_science import map_nemotron_science
 from preprocessing.mappers.science.textbook_reasoning import map_textbook_reasoning
-from preprocessing.mappers.tool_calling.xlam_function_calling import map_salesforce_xlam_function_calling_60k
+from preprocessing.mappers.tool_calling.xlam_function_calling import map_xlam_function_calling
 
 
 MapperFn = Callable[[dict[str, list[Any]], list[int]], dict[str, list[Any]]]
 
 
 TOOL_CALLING_MAPPERS: dict[str, MapperFn] = {
-    "MadeAgents/xlam-irrelevance-7.5k": map_salesforce_xlam_function_calling_60k,
-    "Salesforce/xlam-function-calling-60k": map_salesforce_xlam_function_calling_60k,
+    "MadeAgents/xlam-irrelevance-7.5k": map_xlam_function_calling,
+    "Salesforce/xlam-function-calling-60k": map_xlam_function_calling,
 }
 
 MATH_AND_CODING_MAPPERS: dict[str, MapperFn] = {
