@@ -65,6 +65,8 @@ def main():
     parser.add_argument("--framework", type=str, default="sglang", help="Serving framework (e.g., sglang, vllm)")
     parser.add_argument("--no-reasoning-kwargs", action="store_true", help="Disable passing chat_template_kwargs for reasoning")
     parser.add_argument("--env", type=str, help="Optional environment name for job submission (e.g., vllm_qwen35)", required=False)
+    parser.add_argument("--glm", action="store_true", help="Enable GLM-specific serving config (sglang_glm env, EAGLE speculative decoding, custom parsers)")
+    parser.add_argument("--pre-launch-cmds", type=str, default=None, help="Commands to run before launching framework (e.g., 'pip install blobfile')")
     parser.add_argument("--split", type=str, default="train", help="Split of the dataset to use")
     parser.add_argument("--base-url", type=str, help="Base URL for the model server (overrides auto-discovery)", required=False)
     parser.add_argument("--preprocess", action="store_true", help="Preprocess the dataset before generation")
@@ -96,13 +98,14 @@ def main():
             "--slurm-account", args.account,
         ]
         if args.env:
-            submit_cmd.extend([
-                "--slurm-environment", f"{scratch}/model-launch/legacy/serving/envs/{args.env}.toml"
-            ])
+            env_name = args.env
+        elif args.glm:
+            env_name = "sglang_glm"
         else:
-            submit_cmd.extend([
-                "--slurm-environment", f"{scratch}/model-launch/legacy/serving/envs/{args.framework}.toml"
-            ])
+            env_name = args.framework
+        submit_cmd.extend([
+            "--slurm-environment", f"{scratch}/model-launch/legacy/serving/envs/{env_name}.toml"
+        ])
             
         if args.workers > 1:
             submit_cmd.extend([
@@ -117,6 +120,10 @@ def main():
         
         if args.framework == "sglang":
             fw_args = f"--model-path {args.model} --host 0.0.0.0 --port 8080 --served-model-name {args.model} --dp-size {args.dp_size} --tp-size {args.tp_size} --trust-remote-code"
+            if args.glm:
+                fw_args += " --tool-call-parser glm47 --reasoning-parser glm45"
+                fw_args += " --speculative-algorithm EAGLE --speculative-num-steps 3 --speculative-eagle-topk 1 --speculative-num-draft-tokens 4"
+                fw_args += " --mem-fraction-static 0.85 --disable-cuda-graph"
         elif args.framework == "vllm":
             fw_args = f"--model {args.model} --host 0.0.0.0 --port 8080 --served-model-name {args.model} --data-parallel-size {args.dp_size} --tensor-parallel-size {args.tp_size} --trust-remote-code"
             if args.enforce_eager:
@@ -125,8 +132,11 @@ def main():
                 fw_args += " --tokenizer_mode mistral --load_format mistral --config_format mistral"
         else:
             raise ValueError(f"Invalid framework: {args.framework}")
-        
+
         submit_cmd.extend(["--framework-args", fw_args])
+
+        if args.pre_launch_cmds:
+            submit_cmd.extend(["--pre-launch-cmds", args.pre_launch_cmds])
 
         print(f"🚀 Submitting: {' '.join(submit_cmd)}")
         result = subprocess.run(submit_cmd, cwd=args.logs_dir, capture_output=True, text=True, check=True)

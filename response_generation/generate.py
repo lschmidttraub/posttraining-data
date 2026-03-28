@@ -29,7 +29,7 @@ def parse_thinking(content):
     return "", content.strip()
 
 def sanitize_messages(messages):
-    """Strip all non-standard fields from messages to avoid vLLM/Mistral validation errors."""
+    """Strip all non-standard fields from messages to avoid vLLM validation errors."""
     # Standard OpenAI chat message fields per role
     ALLOWED_KEYS = {
         "system": {"role", "content", "name"},
@@ -62,7 +62,7 @@ async def writer_task(queue, filepath):
             f.flush() # Ensure it's immediately written to disk
             queue.task_done()
 
-async def get_response(idx, prompt, client, model, max_length, temperature, semaphore, queue, use_reasoning=True):
+async def get_response(idx, prompt, client, model, max_length, temperature, semaphore, queue):
     """Fetches the response and immediately puts it in the write queue."""
     async with semaphore:
         try:
@@ -75,8 +75,6 @@ async def get_response(idx, prompt, client, model, max_length, temperature, sema
                 max_tokens=max_length,
                 temperature=temperature,
             )
-            if use_reasoning:
-                kwargs["extra_body"] = {"chat_template_kwargs": {"enable_thinking": False}}
             
             res = await client.chat.completions.create(**kwargs)
             content = res.choices[0].message.content
@@ -197,9 +195,8 @@ async def main(args):
 
     # 6. Create and Run Tasks
     print(f"🚀 Processing {len(valid_indices)} prompts...")
-    use_reasoning = not args.no_reasoning_kwargs
     tasks = [
-        get_response(idx, all_prompts[idx], client, args.model, args.max_length, args.temperature, semaphore, queue, use_reasoning) 
+        get_response(idx, all_prompts[idx], client, args.model, args.max_length, args.temperature, semaphore, queue) 
         for idx in valid_indices
     ]
     
@@ -251,8 +248,6 @@ async def main(args):
     generation_meta = json.dumps({
         "temperature": args.temperature,
         "max_length": args.max_length,
-        "base_url": args.base_url,
-        "concurrent": args.concurrent,
     })
     if "generation_meta" in dataset.column_names:
         dataset = dataset.remove_columns("generation_meta")
@@ -282,7 +277,6 @@ if __name__ == "__main__":
     parser.add_argument("--concurrent", type=int, default=2000)
     parser.add_argument("--base-url", type=str, default="https://serving.swissai.cscs.ch/")
     parser.add_argument("--temperature", type=float, default=1.0)
-    parser.add_argument("--no-reasoning-kwargs", action="store_true", help="Disable passing chat_template_kwargs (needed for Mistral tokenizers)")
     parser.add_argument("--retry-existing", action="store_true", help="Retry samples whose saved response is empty in responses.jsonl or an existing response column")
     args = parser.parse_args()
 

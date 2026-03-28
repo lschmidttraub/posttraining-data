@@ -2,31 +2,10 @@
 
 # Format: "ModelName TotalNodes Workers NodesPerWorker DP TP DisableOCF(true/false) Framework NoReasoningKwargs(true/false)"
 JOBS=(
-  # "Qwen/Qwen2.5-0.5B-Instruct 1 1 1 4 1 false sglang false"
-  # "Qwen/Qwen2.5-1.5B-Instruct 1 1 1 4 1 false sglang false"
-  # "Qwen/Qwen3-0.6B 1 1 1 4 1 false sglang false"
-  # "Qwen/Qwen3-1.7B 1 1 1 4 1 false sglang false"
-  # "Qwen/Qwen3-4B-Instruct-2507 1 1 1 4 1 false sglang false"
   # "Qwen/Qwen3-8B 1 1 1 4 1 false sglang false"
   # "Qwen/Qwen3-32B 1 1 1 4 1 false sglang false"
-  # "Qwen/Qwen3-30B-A3B-Instruct-2507 1 1 1 1 4 false sglang false"
-  # "Qwen/Qwen3-Omni-30B-A3B-Instruct 1 1 1 1 4 false sglang false"
-  # "Qwen/Qwen3-Next-80B-A3B-Instruct 1 1 1 1 4 false sglang false"
-  # "Qwen/Qwen3-235B-A22B-Instruct-2507 16 8 2 1 8 true vllm false"
-  # "microsoft/Phi-4-mini-instruct 1 1 1 4 1 false sglang false"
-  # "mistralai/Mistral-Small-24B-Instruct-2501 1 1 1 1 4 false sglang false"
-  # "mistralai/Mixtral-8x22B-Instruct-v0.1 2 1 2 1 8 true sglang false"
-  # "mistralai/Ministral-3-3B-Instruct-2512 1 1 1 4 1 false vllm true"
-  # "mistralai/Ministral-3-8B-Instruct-2512 1 1 1 4 1 false vllm true"
-  # "mistralai/Ministral-3-14B-Instruct-2512 1 1 1 4 1 false vllm true"
-  # "arcee-ai/Trinity-Mini 1 1 1 4 1 false vllm false"
-  # "arcee-ai/Trinity-Nano-Preview 1 1 1 4 1 false vllm false"
-  # "HuggingFaceTB/SmolLM3-3B 1 1 1 4 1 false sglang false"
-  # "utter-project/EuroLLM-1.7B-Instruct 1 1 1 4 1 false sglang false"
-  # "utter-project/EuroLLM-9B-Instruct-2512 1 1 1 4 1 false sglang false"
-  # "utter-project/EuroLLM-22B-Instruct-2512 1 1 1 4 1 false sglang false"
-  "${SCRATCH}/models/Qwen_Qwen3.5-397B-A17B 8 2 4 1 16 true vllm false"
-  # "mistralai/Mistral-Large-3-675B-Instruct-2512 32 8 4 1 16 true vllm true"
+  # "${SCRATCH}/models/Qwen_Qwen3.5-397B-A17B 32 8 4 1 16 true vllm false"
+  "${SCRATCH}/models/zai-org_GLM-5 32 4 8 1 32 true sglang true"
 )
 
 INPUT_DATASET="${INPUT_DATASET:-Salesforce/xlam-function-calling-60k}"
@@ -48,9 +27,7 @@ JOB_TIME="12:00:00"
 SPLIT="train"
 
 ACCOUNT="infra01"
-# RESERVATION="PA-2338-RL"
 LOGS_DIR="./logs/generation"
-HF_SECRETS_FILE="${HF_SECRETS_FILE:-$HOME/.hf_secrets}"
 
 mkdir -p $LOGS_DIR
 
@@ -77,14 +54,14 @@ fi
 printf -v PREPROCESS_MAPPER_FLAGS_STRING "%q " "${PREPROCESS_MAPPER_FLAGS[@]}"
 
 for ENTRY in "${JOBS[@]}"; do
-  read -r MODEL NNODES WORKERS NPW DP TP DOCF FRAMEWORK NO_REASONING <<<"$ENTRY"
+  read -r MODEL NNODES WORKERS NPW DP TP DOCF FRAMEWORK GLM <<<"$ENTRY"
   SAFE_MODEL_NAME=$(basename $MODEL)
 
   OCF_FLAG=""
   if [ "$DOCF" = "true" ]; then OCF_FLAG="--disable-ocf"; fi
 
-  REASONING_FLAG=""
-  if [ "$NO_REASONING" = "true" ]; then REASONING_FLAG="--no-reasoning-kwargs"; fi
+  GLM_FLAG=""
+  if [ "$GLM" = "true" ]; then GLM_FLAG="--glm --pre-launch-cmds 'PIP_CONSTRAINT= pip install blobfile'"; fi
 
   REMOVE_LAST_MESSAGE_FLAG=""
   if [ "$REMOVE_LAST_MESSAGE" -eq 1 ]; then REMOVE_LAST_MESSAGE_FLAG="--remove-last-message"; fi
@@ -103,7 +80,6 @@ for ENTRY in "${JOBS[@]}"; do
 #SBATCH --account=${ACCOUNT}
 #SBATCH --output=${LOGS_DIR}/client/${SAFE_MODEL_NAME}_%j.log
 #SBATCH --time=${JOB_TIME}
-##SBATCH --reservation=${RESERVATION}                 # Uncomment if you have a reservation to use
 #SBATCH --partition=normal
 #SBATCH --nodes=1
 
@@ -122,7 +98,7 @@ srun --environment="./response_generation/env/alignment.toml" --container-writab
     --job-time '${JOB_TIME}' \\
     --account ${ACCOUNT} \\
     --split '${SPLIT}' \\
-    ${OCF_FLAG} ${REASONING_FLAG} ${REMOVE_LAST_MESSAGE_FLAG} ${PREPROCESS_FLAG} --enforce-eager"
+    ${OCF_FLAG} ${REASONING_FLAG} ${REMOVE_LAST_MESSAGE_FLAG} ${PREPROCESS_FLAG} --enforce-eager ${GLM_FLAG}
 EOF
 done
 
