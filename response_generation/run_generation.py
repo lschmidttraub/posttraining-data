@@ -67,6 +67,8 @@ def main():
     parser.add_argument("--preprocess-batch-size", type=int, default=1000, help="Batch size for preprocessing")
     parser.add_argument("--preprocess-num-proc", type=int, default=None, help="Optional number of preprocessing worker processes")
 
+    parser.add_argument("--max-length", type=int, default=8096, help="Max output tokens per response")
+
 
     args = parser.parse_args()
     dataset_path = maybe_preprocess_dataset(args)
@@ -211,6 +213,7 @@ def main():
         "--output-dir", output_dir,
         "--model", args.model,
         "--base-url", base_url,
+        "--max-length", str(args.max_length),
         "--retry-existing",
     ]
     if args.remove_last_message:

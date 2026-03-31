@@ -27,6 +27,7 @@ else
 fi
 
 BASE_OUTPUT_DIR="${BASE_OUTPUT_DIR:-$SCRATCH/datasets/completions/$DATASET_NAME}"
+MAX_LENGTH="${MAX_LENGTH:-8096}"
 JOB_TIME="12:00:00"
 SPLIT="train"
 
@@ -72,6 +73,7 @@ srun --environment="./response_generation/env/alignment.toml" --container-writab
     --job-time '${JOB_TIME}' \\
     --account ${ACCOUNT} \\
     --split '${SPLIT}' \\
+    --max-length ${MAX_LENGTH} \\
     ${OCF_FLAG} --enforce-eager ${GLM_FLAG}"
 EOF
 done

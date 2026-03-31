@@ -4,12 +4,17 @@ import os
 
 from datasets import Dataset, DatasetDict, concatenate_datasets, load_dataset, load_from_disk
 
-from preprocessing.registry import MAPPER_REGISTRY
+from preprocessing.registry import DATASET_LOADERS, MAPPER_REGISTRY
 from preprocessing.schema import STANDARD_COLUMNS
 
 
 def load_input_dataset(dataset_name: str) -> DatasetDict:
-    dataset = load_from_disk(dataset_name) if os.path.exists(dataset_name) else load_dataset(dataset_name)
+    if dataset_name in DATASET_LOADERS:
+        dataset = DATASET_LOADERS[dataset_name]()
+    elif os.path.exists(dataset_name):
+        dataset = load_from_disk(dataset_name)
+    else:
+        dataset = load_dataset(dataset_name)
     if isinstance(dataset, DatasetDict):
         return dataset
     return DatasetDict({"train": dataset})
