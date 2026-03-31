@@ -7,6 +7,11 @@ from preprocessing.mappers.utils import row_mapper_to_batched
 
 DATA_SOURCE = "open-r1/DAPO-Math-17k-Processed"
 
+MATH_INSTRUCTION_PREFIX = (
+    "{question}\n\n"
+    "Please answer step by step, and put your final answer within \\boxed{{}}.\n"
+)
+
 
 def load_dapo_math() -> DatasetDict:
     ds = load_dataset(DATA_SOURCE, "en", split="train")
@@ -14,15 +19,8 @@ def load_dapo_math() -> DatasetDict:
 
 
 def _map_dapo_math_row(example: dict[str, Any], idx: int) -> Optional[dict[str, Any]]:
-    messages = example.get("source_prompt", [])
-    content = ""
-    for msg in messages:
-        if msg.get("role") == "user":
-            content = msg["content"]
-            break
-
     return {
-        "prompt": [{"role": "user", "content": content}],
+        "prompt": [{"role": "user", "content": MATH_INSTRUCTION_PREFIX.format(question=example["prompt"])}],
         "reference": json.dumps({"expected_answer": example["solution"]}, ensure_ascii=True),
         "data_source": DATA_SOURCE,
         "meta_information": json.dumps({"split": "en"}, ensure_ascii=True),

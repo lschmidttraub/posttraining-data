@@ -7,6 +7,11 @@ from preprocessing.mappers.utils import row_mapper_to_batched
 
 DATA_SOURCE = "open-r1/Big-Math-RL-Verified-Processed"
 
+MATH_INSTRUCTION_PREFIX = (
+    "{question}\n\n"
+    "Please answer step by step, and put your final answer within \\boxed{{}}.\n"
+)
+
 
 def load_big_math_rl() -> DatasetDict:
     ds = load_dataset(DATA_SOURCE, "all", split="train")
@@ -15,7 +20,7 @@ def load_big_math_rl() -> DatasetDict:
 
 def _map_big_math_rl_row(example: dict[str, Any], idx: int) -> Optional[dict[str, Any]]:
     return {
-        "prompt": [{"role": "user", "content": example["prompt"]}],
+        "prompt": [{"role": "user", "content": MATH_INSTRUCTION_PREFIX.format(question=example["prompt"])}],
         "reference": json.dumps({"expected_answer": example["solution"]}, ensure_ascii=True),
         "data_source": DATA_SOURCE,
         "meta_information": json.dumps(

@@ -6,8 +6,8 @@ from preprocessing.mappers.utils import row_mapper_to_batched
 DATA_SOURCE = "zwhe99/DeepMath-103K"
 
 MATH_INSTRUCTION_PREFIX = (
-    "Solve the following math problem. Make sure to put the answer "
-    "(and only the answer) inside \\boxed{}.\n\n"
+    "{question}\n\n"
+    "Please answer step by step, and put your final answer within \\boxed{{}}.\n"
 )
 
 
@@ -17,7 +17,7 @@ def _map_deepmath_row(example: dict[str, Any], idx: int) -> Optional[dict[str, A
         reference["expert_solution"] = example["r1_solution_1"]
 
     return {
-        "prompt": [{"role": "user", "content": MATH_INSTRUCTION_PREFIX + example["question"]}],
+        "prompt": [{"role": "user", "content": MATH_INSTRUCTION_PREFIX.format(question=example["question"])}],
         "reference": json.dumps(reference, ensure_ascii=True),
         "data_source": DATA_SOURCE,
         "meta_information": json.dumps(

@@ -6,8 +6,8 @@ from preprocessing.mappers.utils import row_mapper_to_batched
 DATA_SOURCE = "nlile/NuminaMath-1.5-RL-Verifiable"
 
 MATH_INSTRUCTION_PREFIX = (
-    "Solve the following math problem. Make sure to put the answer "
-    "(and only the answer) inside \\boxed{}.\n\n"
+    "{question}\n\n"
+    "Please answer step by step, and put your final answer within \\boxed{{}}.\n"
 )
 
 
@@ -17,7 +17,7 @@ def _map_numina_math_row(example: dict[str, Any], idx: int) -> Optional[dict[str
         reference["expert_solution"] = example["solution"]
 
     return {
-        "prompt": [{"role": "user", "content": MATH_INSTRUCTION_PREFIX + example["problem"]}],
+        "prompt": [{"role": "user", "content": MATH_INSTRUCTION_PREFIX.format(question=example["problem"])}],
         "reference": json.dumps(reference, ensure_ascii=True),
         "data_source": DATA_SOURCE,
         "meta_information": json.dumps(
