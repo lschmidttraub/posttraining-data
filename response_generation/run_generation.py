@@ -161,12 +161,12 @@ def main():
         submit_cmd.extend(["--framework-args", fw_args])
 
         pre_launch = args.pre_launch_cmds or ""
-        if args.nodes_per_worker > 1:
-            # Workaround: on Slingshot/CXI, separate srun steps get isolated
-            # network credentials, so NCCL's OFI/CXI provider fails. Force
-            # NCCL to use TCP sockets for inter-node communication instead.
-            nccl_fix = "export NCCL_NET=Socket"
-            pre_launch = f"{nccl_fix}; {pre_launch}" if pre_launch else nccl_fix
+        # if args.nodes_per_worker > 1:
+        #     # Workaround: on Slingshot/CXI, separate srun steps get isolated
+        #     # network credentials, so NCCL's OFI/CXI provider fails. Force
+        #     # NCCL to use TCP sockets for inter-node communication instead.
+        #     nccl_fix = "export NCCL_NET=Socket"
+        #     pre_launch = f"{nccl_fix}; {pre_launch}" if pre_launch else nccl_fix
         
         if pre_launch:
             submit_cmd.extend(["--pre-launch-cmds", pre_launch])
