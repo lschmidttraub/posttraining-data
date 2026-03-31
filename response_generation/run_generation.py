@@ -4,6 +4,8 @@ import json
 import time
 import argparse
 import subprocess
+import signal
+import shlex
 import urllib.request
 
 
@@ -18,14 +20,26 @@ def maybe_preprocess_dataset(args):
     if not args.preprocessed_dataset_dir:
         raise ValueError("--preprocessed-dataset-dir is required when --preprocess is set")
 
-    preprocess_cmd = [
+    preprocess_inner_cmd = [
         "python", "-u", "-m", "preprocessing.run",
         "--category", args.preprocess_category,
         "--output-dir", args.preprocessed_dataset_dir,
         "--batch-size", str(args.preprocess_batch_size),
     ]
     if args.preprocess_num_proc is not None:
-        preprocess_cmd.extend(["--num-proc", str(args.preprocess_num_proc)])
+        preprocess_inner_cmd.extend(["--num-proc", str(args.preprocess_num_proc)])
+
+    preprocess_cmd = [
+        "srun",
+        "--overlap",
+        "--het-group=" + str(args.client_hetgroup),
+        "--environment=./response_generation/env/alignment.toml",
+        "--container-writable",
+        f"--container-workdir={os.getcwd()}",
+        "bash",
+        "-lc",
+        "unset SSL_CERT_FILE && " + " ".join(shlex.quote(arg) for arg in preprocess_inner_cmd),
+    ]
 
     print(f"🚀 Preprocessing dataset: {' '.join(preprocess_cmd)}")
     subprocess.run(preprocess_cmd, check=True)
@@ -47,6 +61,8 @@ def main():
     parser.add_argument("--account", type=str, default="infra01")
 
     parser.add_argument("--slurm-nodes", type=int, default=1)
+    parser.add_argument("--client-hetgroup", type=int, default=1, help="Hetgroup to use for client submission")
+    parser.add_argument("--server-hetgroup", type=int, default=1, help="Hetgroup to use for server submission")
     parser.add_argument("--workers", type=int, default=1, help="Number of sglang workers")
     parser.add_argument("--nodes-per-worker", type=int, default=1)
     parser.add_argument("--dp-size", type=int, default=1)
@@ -73,10 +89,34 @@ def main():
     model_short = args.model.split("/")[-1]
     scratch = os.environ.get("SCRATCH", "/tmp")
     os.makedirs(args.logs_dir, exist_ok=True)
+    server_proc = None
+    job_id = os.environ.get("SLURM_JOB_ID")
+
+    def cleanup():
+        nonlocal server_proc
+        if server_proc and server_proc.poll() is None:
+            print("🛑 Stopping serving step...")
+            os.killpg(server_proc.pid, signal.SIGTERM)
+            try:
+                server_proc.wait(timeout=30)
+            except subprocess.TimeoutExpired:
+                print("⚠️ Serving step did not exit after SIGTERM, sending SIGKILL.")
+                os.killpg(server_proc.pid, signal.SIGKILL)
+                server_proc.wait()
+
+    def handle_signal(signum, frame):
+        cleanup()
+        raise SystemExit(128 + signum)
+
+    signal.signal(signal.SIGINT, handle_signal)
+    signal.signal(signal.SIGTERM, handle_signal)
+
     if not args.base_url:
         submit_cmd = [
-            "python", f"{scratch}/model-launch/legacy/serving/submit_job.py",
+            "uv", "run",
+            "python", f"{scratch}/model-launch/legacy/serving/run_job.py",
             "--slurm-nodes", str(args.slurm_nodes),
+            "--hetgroup", str(args.server_hetgroup),
             "--slurm-time", args.job_time,
             "--serving-framework", args.framework,
             "--worker-port", "8080",
@@ -120,46 +160,61 @@ def main():
 
         submit_cmd.extend(["--framework-args", fw_args])
 
-        if args.pre_launch_cmds:
-            submit_cmd.extend(["--pre-launch-cmds", args.pre_launch_cmds])
+        pre_launch = args.pre_launch_cmds or ""
+        if args.nodes_per_worker > 1:
+            # Workaround: on Slingshot/CXI, separate srun steps get isolated
+            # network credentials, so NCCL's OFI/CXI provider fails. Force
+            # NCCL to use TCP sockets for inter-node communication instead.
+            nccl_fix = "export NCCL_NET=Socket"
+            pre_launch = f"{nccl_fix}; {pre_launch}" if pre_launch else nccl_fix
+        
+        if pre_launch:
+            submit_cmd.extend(["--pre-launch-cmds", pre_launch])
 
         print(f"🚀 Submitting: {' '.join(submit_cmd)}")
-        result = subprocess.run(submit_cmd, cwd=args.logs_dir, capture_output=True, text=True, check=True)
-        combined_output = result.stdout + "\n" + result.stderr
-        job_id = None
-        
-        for line in combined_output.splitlines():
-            if "Job submitted successfully with ID:" in line:
-                job_id = line.split()[-1].strip()
-                break
-                
+        server_proc = subprocess.Popen(
+            submit_cmd,
+            cwd=args.logs_dir,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            start_new_session=True,
+        )
+
         if not job_id:
-            print("❌ Failed to parse Job ID from output.")
-            print("--- STDOUT ---")
-            print(result.stdout)
-            print("--- STDERR ---")
-            print(result.stderr)
+            cleanup()
+            print("❌ Missing outer SLURM job ID in environment.")
             sys.exit(1)
 
-        print(f"✅ Found Job ID: {job_id}")
+        print(f"✅ Using outer job ID: {job_id}")
     else:
-        # TODO: bad because we can't cancel the running server this way.
-        job_id = ""
+        print("ℹ️ Using provided base URL; skipping serving launch.")
         
-    log_file = f"{args.logs_dir}/logs/{job_id}/log.out"
+    submit_dir = os.environ.get("SLURM_SUBMIT_DIR", os.getcwd())
+    server_log = os.path.join(submit_dir, "logs", job_id, "log.out") if job_id else None
     base_url = args.base_url
     target_prefix = "Router URL: " if args.workers > 1 else "All worker URLs: "
 
     while not base_url:
-        if os.path.exists(log_file):
-            with open(log_file, "r") as f:
-                content = f.read()
-                if target_prefix in content:
-                    for line in content.splitlines():
-                        if line.startswith(target_prefix):
-                            raw = line.split(target_prefix)[1].strip()
-                            base_url = f"{raw}/v1" if args.workers > 1 else f"{raw.rsplit(':', 1)[0]}:8080/v1"
-                            break
+        if server_proc and server_proc.poll() is not None:
+            launch_output = ""
+            if server_proc.stdout is not None:
+                launch_output = server_proc.stdout.read()
+            print("❌ Serving step exited before publishing a URL.")
+            if launch_output:
+                print("--- SERVING OUTPUT ---")
+                print(launch_output)
+            sys.exit(1)
+
+        if server_log and os.path.exists(server_log):
+            with open(server_log, "r") as f:
+                for line in f:
+                    if line.startswith(target_prefix):
+                        raw = line.split(target_prefix)[1].strip()
+                        base_url = f"{raw}/v1" if args.workers > 1 else f"{raw.rsplit(':', 1)[0]}:8080/v1"
+                        break
+            if base_url:
+                break
         time.sleep(5)
 
     health_url = base_url.replace("/v1", "/health")
@@ -203,8 +258,8 @@ def main():
         probe_delay = min(probe_delay * 2, 60)
 
     output_dir = os.path.join(args.base_output_dir, model_short)
-    gen_cmd = [
-        "python", "response_generation/generate.py",
+    generate_args = [
+        "python", "-u", "response_generation/generate.py",
         "--dataset-path", dataset_path,
         "--prompt-column-name", args.prompt_column_name,
         "--split", args.split,
@@ -214,10 +269,22 @@ def main():
         "--retry-existing",
     ]
     if args.remove_last_message:
-        gen_cmd.append("--remove-last-message")
-    subprocess.run(gen_cmd, check=True)
-    
-    subprocess.run(["scancel", job_id])
+        generate_args.append("--remove-last-message")
+    gen_cmd = [
+        "srun",
+        "--overlap",
+        "--het-group=" + str(args.client_hetgroup),
+        "--environment=./response_generation/env/alignment.toml",
+        "--container-writable",
+        f"--container-workdir={os.getcwd()}",
+        "bash",
+        "-lc",
+        "unset SSL_CERT_FILE && " + " ".join(shlex.quote(arg) for arg in generate_args),
+    ]
+    try:
+        subprocess.run(gen_cmd, check=True)
+    finally:
+        cleanup()
 
 if __name__ == "__main__":
     main()

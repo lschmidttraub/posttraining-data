@@ -5,11 +5,11 @@ JOBS=(
   # "Qwen/Qwen3-8B 1 1 1 4 1 false sglang false"
   # "Qwen/Qwen3-32B 1 1 1 4 1 false sglang false"
   # "${SCRATCH}/models/Qwen_Qwen3.5-397B-A17B 32 8 4 1 16 true vllm false"
-  "${SCRATCH}/models/zai-org_GLM-5 32 4 8 1 32 true sglang true"
+  "${SCRATCH}/models/zai-org_GLM-5 8 1 8 1 32 true sglang true"
 )
 
 CATEGORY="${CATEGORY:-}"
-INPUT_DATASET="${INPUT_DATASET:-$SCRATCH/datasets/chunked/science-chunkA}"
+INPUT_DATASET="${INPUT_DATASET:-$SCRATCH/datasets/chunked/science/science-chunk100}"
 
 # If category is set, we preprocess the category and use the result for generation
 if [ -n "${CATEGORY}" ]; then
@@ -33,7 +33,7 @@ SPLIT="train"
 ACCOUNT="infra01"
 LOGS_DIR="./logs/generation"
 
-mkdir -p $LOGS_DIR
+mkdir -p $LOGS_DIR/client $LOGS_DIR/server
 
 printf -v DATASET_FLAGS_STRING "%q " "${DATASET_FLAGS[@]}"
 
@@ -57,8 +57,11 @@ for ENTRY in "${JOBS[@]}"; do
 #SBATCH --partition=normal
 #SBATCH --nodes=1
 
-srun --environment="./response_generation/env/alignment.toml" --container-writable --container-workdir="$PWD" \\
-    bash -c "unset SSL_CERT_FILE && python -u response_generation/run_generation.py \\
+#SBATCH hetjob
+#SBATCH --nodes=${NNODES}
+
+
+uv run python -u response_generation/run_generation.py \\
     ${DATASET_FLAGS_STRING} \\
     --base-output-dir '${BASE_OUTPUT_DIR}' \\
     --logs-dir '${LOGS_DIR}/server' \\
@@ -72,7 +75,28 @@ srun --environment="./response_generation/env/alignment.toml" --container-writab
     --job-time '${JOB_TIME}' \\
     --account ${ACCOUNT} \\
     --split '${SPLIT}' \\
-    ${OCF_FLAG} --enforce-eager ${GLM_FLAG}"
+    --client-hetgroup 0 \\
+    --server-hetgroup 1 \\
+    ${OCF_FLAG} --enforce-eager ${GLM_FLAG}
+
+# srun --overlap --het-group=0 --environment="./response_generation/env/alignment.toml" --container-writable --container-workdir="$PWD" \\
+#     bash -c "unset SSL_CERT_FILE && python -u response_generation/run_generation.py \\
+#     ${DATASET_FLAGS_STRING} \\
+#     --base-output-dir '${BASE_OUTPUT_DIR}' \\
+#     --logs-dir '${LOGS_DIR}/server' \\
+#     --model '${MODEL}' \\
+#     --slurm-nodes ${NNODES} \\
+#     --hetgroup 1 \\
+#     --workers ${WORKERS} \\
+#     --nodes-per-worker ${NPW} \\
+#     --dp-size ${DP} \\
+#     --tp-size ${TP} \\
+#     --framework '${FRAMEWORK}' \\
+#     --job-time '${JOB_TIME}' \\
+#     --account ${ACCOUNT} \\
+#     --split '${SPLIT}' \\
+#     ${OCF_FLAG} --enforce-eager ${GLM_FLAG}"
+
 EOF
 done
 
