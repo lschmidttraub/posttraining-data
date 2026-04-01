@@ -72,35 +72,49 @@ async def writer_task(queue, filepath):
             f.flush() # Ensure it's immediately written to disk
             queue.task_done()
 
-async def get_response(idx, prompt, client, model, max_length, temperature, semaphore, queue):
-    """Fetches the response and immediately puts it in the write queue."""
-    async with semaphore:
-        try:
-            # Sanitize messages to avoid Mistral tokenizer tool_calls issues
-            prompt = sanitize_messages(prompt)
-            
-            kwargs = dict(
-                model=model,
-                messages=prompt,
-                max_tokens=max_length,
-                temperature=temperature,
-            )
-            
-            res = await client.chat.completions.create(**kwargs)
-            message = res.choices[0].message
-            content = message.content or ""
-            # SGLang/vLLM separate thinking into reasoning_content for
-            # thinking models (e.g. Qwen3.5, QwQ). Read it if available.
-            reasoning_content = getattr(message, "reasoning_content", None) or ""
-        except Exception as e:
-            print(f"Error for index {idx}: {e}")
-            content = ""
-            reasoning_content = ""
+async def get_response(idx, prompt, client, model, max_length, temperature, semaphore, queue, max_retries=3):
+    """Fetches the response and immediately puts it in the write queue.
 
-        thinking, answer = parse_thinking(content)
-        # Prefer the framework-separated reasoning over inline parsing
-        if reasoning_content:
-            thinking = reasoning_content.strip()
+    Retries up to *max_retries* times when the returned answer is empty
+    (e.g. due to a transient API error or an empty completion).
+    """
+    async with semaphore:
+        prompt = sanitize_messages(prompt)
+        kwargs = dict(
+            model=model,
+            messages=prompt,
+            max_tokens=max_length,
+            temperature=temperature,
+        )
+
+        thinking, answer = "", ""
+        for attempt in range(1, max_retries + 1):
+            try:
+                res = await client.chat.completions.create(**kwargs)
+                message = res.choices[0].message
+                content = message.content or ""
+                # SGLang/vLLM separate thinking into reasoning_content for
+                # thinking models (e.g. Qwen3.5, QwQ). Read it if available.
+                reasoning_content = getattr(message, "reasoning_content", None) or ""
+            except Exception as e:
+                print(f"Error for index {idx} (attempt {attempt}/{max_retries}): {e}")
+                content = ""
+                reasoning_content = ""
+
+            thinking, answer = parse_thinking(content)
+            # Prefer the framework-separated reasoning over inline parsing
+            if reasoning_content:
+                thinking = reasoning_content.strip()
+
+            if answer:
+                break
+
+            if attempt < max_retries:
+                print(f"Empty answer for index {idx} (attempt {attempt}/{max_retries}), retrying…")
+
+        if not answer:
+            print(f"⚠️  index {idx}: answer still empty after {max_retries} attempt(s).")
+
         await queue.put({
             "index": idx,
             "thinking": thinking,
@@ -214,7 +228,7 @@ async def main(args):
     # 6. Create and Run Tasks
     print(f"🚀 Processing {len(valid_indices)} prompts...")
     tasks = [
-        get_response(idx, all_prompts[idx], client, args.model, args.max_length, args.temperature, semaphore, queue) 
+        get_response(idx, all_prompts[idx], client, args.model, args.max_length, args.temperature, semaphore, queue, args.max_retries)
         for idx in valid_indices
     ]
     
@@ -261,7 +275,8 @@ async def main(args):
 
     if "generation_model" in dataset.column_names:
         dataset = dataset.remove_columns("generation_model")
-    dataset = dataset.add_column("generation_model", [args.model] * len(dataset))
+    basename = os.path.basename(args.model)
+    dataset = dataset.add_column("generation_model", [basename] * len(dataset))
 
     generation_meta = json.dumps({
         "temperature": args.temperature,
@@ -274,10 +289,9 @@ async def main(args):
     dataset.save_to_disk(args.output_dir)
 
     with open(os.path.join(args.output_dir, "model_used.txt"), "w") as f:
-        f.write(args.model)
+        f.write(basename)
 
 if __name__ == "__main__":
-    # Install uvloop for maximum performance before anything else
     # python generate.py --dataset-path=allenai/Dolci-Instruct-DPO --output-dir=./datasets/tmpbax3 --model=moonshotai/Kimi-K2.5-dmelikidze --concurrent=250 --base-url=http://172.28.33.32:8080/v1
     uvloop.install()
 
@@ -296,6 +310,7 @@ if __name__ == "__main__":
     parser.add_argument("--base-url", type=str, default="https://serving.swissai.cscs.ch/")
     parser.add_argument("--temperature", type=float, default=1.0)
     parser.add_argument("--retry-existing", action="store_true", help="Retry samples whose saved response is empty in responses.jsonl or an existing response column")
+    parser.add_argument("--max-retries", type=int, default=3, help="Number of times to retry a prompt when the returned answer is empty (default: 3)")
     args = parser.parse_args()
 
     asyncio.run(main(args))

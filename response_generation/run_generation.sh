@@ -9,7 +9,7 @@ JOBS=(
 )
 
 CATEGORY="${CATEGORY:-}"
-INPUT_DATASET="${INPUT_DATASET:-$SCRATCH/datasets/chunked/science/science-chunk100}"
+INPUT_DATASET="${INPUT_DATASET:-$SCRATCH/datasets/chunked/science/science-chunk1}"
 
 # If category is set, we preprocess the category and use the result for generation
 if [ -n "${CATEGORY}" ]; then
@@ -36,7 +36,6 @@ LOGS_DIR="./logs/generation"
 mkdir -p $LOGS_DIR/client $LOGS_DIR/server
 
 printf -v DATASET_FLAGS_STRING "%q " "${DATASET_FLAGS[@]}"
-
 
 for ENTRY in "${JOBS[@]}"; do
   read -r MODEL NNODES WORKERS NPW DP TP DOCF FRAMEWORK GLM <<<"$ENTRY"
