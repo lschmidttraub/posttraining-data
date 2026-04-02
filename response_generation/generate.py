@@ -223,6 +223,96 @@ async def get_response(idx, prompt, client, model, max_length, temperature, sema
             ),
         })
 
+
+def load_input_dataset(dataset_path, split):
+    if os.path.exists(dataset_path):
+        dataset = load_from_disk(dataset_path)
+        if isinstance(dataset, DatasetDict):
+            if split not in dataset:
+                available_splits = ", ".join(dataset.keys())
+                raise ValueError(
+                    f"Split '{split}' not found in local dataset at {dataset_path}. "
+                    f"Available splits: {available_splits}"
+                )
+            return dataset[split]
+        return dataset
+    return load_dataset(dataset_path, split=split)
+
+
+def reconstruct_dataset(dataset, output_jsonl, model, temperature, max_length):
+    if "answer" in dataset.column_names:
+        final_answers = list(dataset["answer"])
+    else:
+        final_answers = [""] * len(dataset)
+    if "thinking" in dataset.column_names:
+        final_thinking = list(dataset["thinking"])
+    else:
+        final_thinking = [""] * len(dataset)
+    final_generation_meta = [
+        build_generation_meta(
+            model=get_dataset_value(dataset, "generation_model", idx, model) or model,
+            temperature=temperature,
+            max_length=max_length,
+            value=get_dataset_value(dataset, "generation_meta", idx),
+        )
+        for idx in range(len(dataset))
+    ]
+    final_generation_info = [
+        build_generation_info(
+            value=get_dataset_value(dataset, "generation_info", idx),
+            finish_reason=get_dataset_value(dataset, "finish_reason", idx, "") or "",
+            stop_reason=get_dataset_value(dataset, "stop_reason", idx, "") or "",
+            generation_error=get_dataset_value(dataset, "generation_error", idx, "") or "",
+            prompt_tokens=get_dataset_value(dataset, "prompt_tokens", idx),
+            completion_tokens=get_dataset_value(dataset, "completion_tokens", idx),
+            total_tokens=get_dataset_value(dataset, "total_tokens", idx),
+            reasoning_tokens=get_dataset_value(dataset, "reasoning_tokens", idx),
+            cached_prompt_tokens=get_dataset_value(dataset, "cached_prompt_tokens", idx),
+        )
+        for idx in range(len(dataset))
+    ]
+
+    if os.path.exists(output_jsonl):
+        with open(output_jsonl, "r", encoding="utf-8") as f:
+            for line in f:
+                if line.strip():
+                    data = json.loads(line)
+                    final_answers[data["index"]] = data.get("answer", "")
+                    final_thinking[data["index"]] = data.get("thinking", "")
+                    final_generation_meta[data["index"]] = build_generation_meta(
+                        model=model,
+                        temperature=temperature,
+                        max_length=max_length,
+                        value=data.get("generation_meta"),
+                    )
+                    final_generation_info[data["index"]] = build_generation_info(
+                        value=data.get("generation_info"),
+                        finish_reason=data.get("finish_reason", "") or "",
+                        stop_reason=data.get("stop_reason", "") or "",
+                        generation_error=data.get("generation_error", "") or "",
+                        prompt_tokens=data.get("prompt_tokens"),
+                        completion_tokens=data.get("completion_tokens"),
+                        total_tokens=data.get("total_tokens"),
+                        reasoning_tokens=data.get("reasoning_tokens"),
+                        cached_prompt_tokens=data.get("cached_prompt_tokens"),
+                    )
+
+    dataset = upsert_column(dataset, "answer", final_answers)
+    dataset = upsert_column(dataset, "thinking", final_thinking)
+    dataset = upsert_column(dataset, "generation_meta", final_generation_meta)
+    dataset = upsert_column(dataset, "generation_info", final_generation_info)
+    return drop_columns_if_present(dataset, [
+        "finish_reason",
+        "stop_reason",
+        "generation_error",
+        "prompt_tokens",
+        "completion_tokens",
+        "total_tokens",
+        "reasoning_tokens",
+        "cached_prompt_tokens",
+        "generation_model",
+    ])
+
 async def main(args):
     # 1. UNLOCK HTTPX LIMITS
     # Ensure the HTTP connection pool matches the exact size of your semaphore
@@ -243,18 +333,7 @@ async def main(args):
     )
 
     # 2. Load Dataset
-    if os.path.exists(args.dataset_path):
-        dataset = load_from_disk(args.dataset_path)
-        if isinstance(dataset, DatasetDict):
-            if args.split not in dataset:
-                available_splits = ", ".join(dataset.keys())
-                raise ValueError(
-                    f"Split '{args.split}' not found in local dataset at {args.dataset_path}. "
-                    f"Available splits: {available_splits}"
-                )
-            dataset = dataset[args.split]
-    else:
-        dataset = load_dataset(args.dataset_path, split=args.split)
+    dataset = load_input_dataset(args.dataset_path, args.split)
         
     os.makedirs(args.output_dir, exist_ok=True)
     output_jsonl = os.path.join(args.output_dir, "responses.jsonl")
@@ -350,78 +429,13 @@ async def main(args):
     # 8. (Optional) Final Reconstruction into Hugging Face Dataset
     print(f"💾 Reconstructing and saving final dataset to {args.output_dir}")
     
-    # Load everything back into ordered memory just once at the end
-    if "answer" in dataset.column_names:
-        final_answers = list(dataset["answer"])
-    else:
-        final_answers = [""] * len(dataset)
-    if "thinking" in dataset.column_names:
-        final_thinking = list(dataset["thinking"])
-    else:
-        final_thinking = [""] * len(dataset)
-    final_generation_meta = [
-        build_generation_meta(
-            model=get_dataset_value(dataset, "generation_model", idx, args.model) or args.model,
-            temperature=args.temperature,
-            max_length=args.max_length,
-            value=get_dataset_value(dataset, "generation_meta", idx),
-        )
-        for idx in range(len(dataset))
-    ]
-    final_generation_info = [
-        build_generation_info(
-            value=get_dataset_value(dataset, "generation_info", idx),
-            finish_reason=get_dataset_value(dataset, "finish_reason", idx, "") or "",
-            stop_reason=get_dataset_value(dataset, "stop_reason", idx, "") or "",
-            generation_error=get_dataset_value(dataset, "generation_error", idx, "") or "",
-            prompt_tokens=get_dataset_value(dataset, "prompt_tokens", idx),
-            completion_tokens=get_dataset_value(dataset, "completion_tokens", idx),
-            total_tokens=get_dataset_value(dataset, "total_tokens", idx),
-            reasoning_tokens=get_dataset_value(dataset, "reasoning_tokens", idx),
-            cached_prompt_tokens=get_dataset_value(dataset, "cached_prompt_tokens", idx),
-        )
-        for idx in range(len(dataset))
-    ]
-
-    with open(output_jsonl, "r", encoding="utf-8") as f:
-        for line in f:
-            if line.strip():
-                data = json.loads(line)
-                final_answers[data["index"]] = data.get("answer", "")
-                final_thinking[data["index"]] = data.get("thinking", "")
-                final_generation_meta[data["index"]] = build_generation_meta(
-                    model=args.model,
-                    temperature=args.temperature,
-                    max_length=args.max_length,
-                    value=data.get("generation_meta"),
-                )
-                final_generation_info[data["index"]] = build_generation_info(
-                    value=data.get("generation_info"),
-                    finish_reason=data.get("finish_reason", "") or "",
-                    stop_reason=data.get("stop_reason", "") or "",
-                    generation_error=data.get("generation_error", "") or "",
-                    prompt_tokens=data.get("prompt_tokens"),
-                    completion_tokens=data.get("completion_tokens"),
-                    total_tokens=data.get("total_tokens"),
-                    reasoning_tokens=data.get("reasoning_tokens"),
-                    cached_prompt_tokens=data.get("cached_prompt_tokens"),
-                )
-
-    dataset = upsert_column(dataset, "answer", final_answers)
-    dataset = upsert_column(dataset, "thinking", final_thinking)
-    dataset = upsert_column(dataset, "generation_meta", final_generation_meta)
-    dataset = upsert_column(dataset, "generation_info", final_generation_info)
-    dataset = drop_columns_if_present(dataset, [
-        "finish_reason",
-        "stop_reason",
-        "generation_error",
-        "prompt_tokens",
-        "completion_tokens",
-        "total_tokens",
-        "reasoning_tokens",
-        "cached_prompt_tokens",
-        "generation_model",
-    ])
+    dataset = reconstruct_dataset(
+        dataset,
+        output_jsonl,
+        model=args.model,
+        temperature=args.temperature,
+        max_length=args.max_length,
+    )
 
     dataset.save_to_disk(args.output_dir)
 
