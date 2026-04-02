@@ -79,10 +79,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--dataset",
         action="append",
+        nargs="+",
         default=[],
         help=(
-            "Restrict processing to this dataset name (must be registered in the category). "
-            "Repeat to select multiple. Defaults to all datasets in the category."
+            "Restrict processing to these dataset names (must be registered in the category). "
+            "You can pass multiple names after one --dataset flag and/or repeat the flag. "
+            "Defaults to all datasets in the category."
         ),
     )
     parser.add_argument("--output-dir", required=True, help="Directory where the processed dataset will be saved")
@@ -91,7 +93,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--upload-to-hub", action="store_true", help="Upload the processed dataset to the Hugging Face Hub")
     parser.add_argument("--hub-dataset-id", default=None, help="Target Hugging Face dataset repo, e.g. org/name")
     parser.add_argument("--hub-private", action="store_true", help="Create or update the Hub dataset as private")
-    return parser.parse_args()
+    args = parser.parse_args()
+    args.dataset = [dataset for group in args.dataset for dataset in group]
+    return args
 
 
 def main() -> None:

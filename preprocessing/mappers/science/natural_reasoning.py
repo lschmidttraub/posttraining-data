@@ -1,6 +1,9 @@
 import json
 from typing import Any
 
+from preprocessing.mappers.utils import inject_system_prompt
+from preprocessing.system_prompts import SYSTEM_PROMPT_SCIENCE
+
 
 DATA_SOURCE = "facebook/natural_reasoning"
 
@@ -26,7 +29,12 @@ def map_natural_reasoning(
 
         ref = {"reference_answer": reference_answer} if reference_answer else {}
 
-        prompts.append([{"role": "user", "content": question}])
+        prompts.append(
+            inject_system_prompt(
+                [{"role": "user", "content": question}],
+                SYSTEM_PROMPT_SCIENCE,
+            )
+        )
         references.append(json.dumps(ref, ensure_ascii=True))
         data_sources.append(DATA_SOURCE)
         data_source_ids.append(str(row_idx))

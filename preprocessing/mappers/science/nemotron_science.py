@@ -1,6 +1,9 @@
 import json
 from typing import Any
 
+from preprocessing.mappers.utils import inject_system_prompt
+from preprocessing.system_prompts import SYSTEM_PROMPT_SCIENCE
+
 
 DATA_SOURCE = "nvidia/Nemotron-Science-v1"
 
@@ -48,7 +51,12 @@ def map_nemotron_science(
         if user_message.get("role") != "user" or assistant_message.get("role") != "assistant":
             continue
 
-        prompts.append([_normalize_message(user_message)])
+        prompts.append(
+            inject_system_prompt(
+                [_normalize_message(user_message)],
+                SYSTEM_PROMPT_SCIENCE,
+            )
+        )
         references.append(json.dumps({}, ensure_ascii=True))
         data_sources.append(DATA_SOURCE)
         data_source_ids.append(str(uuid))

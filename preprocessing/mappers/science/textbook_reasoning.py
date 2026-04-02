@@ -1,12 +1,16 @@
 import json
 from typing import Any
 
+from preprocessing.mappers.utils import inject_system_prompt
+from preprocessing.system_prompts import SYSTEM_PROMPT_SCIENCE
+
 
 DATA_SOURCE = "MegaScience/TextbookReasoning"
 
 
 def map_textbook_reasoning(
-    batch: dict[str, list[Any]], indices: list[int]
+    batch: dict[str, list[Any]], 
+    indices: list[int],
 ) -> dict[str, list[Any]]:
     prompts = []
     references = []
@@ -26,7 +30,15 @@ def map_textbook_reasoning(
         subject = subjects[offset] if offset < len(subjects) else ""
         reference_answer = reference_answers[offset] if offset < len(reference_answers) else ""
 
-        prompts.append([{"role": "user", "content": question}])
+        if isinstance(subject, str) and subject.strip().lower() == "math":
+            continue
+
+        prompts.append(
+            inject_system_prompt(
+                [{"role": "user", "content": question}],
+                SYSTEM_PROMPT_SCIENCE,
+            )
+        )
         references.append(json.dumps({"reference_answer": reference_answer}, ensure_ascii=True))
         data_sources.append(DATA_SOURCE)
         data_source_ids.append(str(row_idx))

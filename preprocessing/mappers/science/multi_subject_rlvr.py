@@ -1,6 +1,9 @@
 import json
 from typing import Any
 
+from preprocessing.mappers.utils import inject_system_prompt
+from preprocessing.system_prompts import SYSTEM_PROMPT_SCIENCE
+
 
 DATA_SOURCE = "virtuoussy/Multi-subject-RLVR"
 
@@ -63,10 +66,15 @@ def map_multi_subject_rlvr(
         if system_message.get("role") != "system" or user_message.get("role") != "user":
             continue
 
-        prompts.append([
-            _normalize_message(system_message),
-            _normalize_message(user_message),
-        ])
+        prompts.append(
+            inject_system_prompt(
+                [
+                    _normalize_message(system_message),
+                    _normalize_message(user_message),
+                ],
+                SYSTEM_PROMPT_SCIENCE,
+            )
+        )
         references.append(
             json.dumps(
                 {

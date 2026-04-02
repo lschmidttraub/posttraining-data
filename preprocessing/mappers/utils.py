@@ -47,3 +47,25 @@ def normalize_argument_value(value: Any) -> Any:
         return value
     return str(value)
 
+
+def inject_system_prompt(messages: list[dict[str, Any]], system: str) -> list[dict[str, str]]:
+    normalized_messages = [
+        {
+            "role": str(message["role"]),
+            "content": str(message["content"]),
+        }
+        for message in messages
+    ]
+
+    for idx, message in enumerate(normalized_messages):
+        if message["role"] != "system":
+            continue
+
+        content = message["content"]
+        normalized_messages[idx] = {
+            "role": "system",
+            "content": f"{content}\n{system}" if content else system,
+        }
+        return normalized_messages
+
+    return [{"role": "system", "content": system}, *normalized_messages]

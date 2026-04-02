@@ -1,6 +1,9 @@
 import json
 from typing import Any
 
+from preprocessing.mappers.utils import inject_system_prompt
+from preprocessing.system_prompts import SYSTEM_PROMPT_SCIENCE
+
 
 DATA_SOURCE = "FreedomIntelligence/medical-o1-verifiable-problem"
 
@@ -32,7 +35,12 @@ def map_medical_o1(
         question = questions[offset] if offset < len(questions) else ""
         ground_truth = ground_truth_answers[offset] if offset < len(ground_truth_answers) else ""
 
-        prompts.append([{"role": "user", "content": question}])
+        prompts.append(
+            inject_system_prompt(
+                [{"role": "user", "content": question}],
+                SYSTEM_PROMPT_SCIENCE,
+            )
+        )
         references.append(
             json.dumps(
                 {
@@ -45,7 +53,7 @@ def map_medical_o1(
         )
         data_sources.append(DATA_SOURCE)
         data_source_ids.append(str(row_idx))
-        meta_information.append(json.dumps({}, ensure_ascii=True))
+        meta_information.append(json.dumps({"subject": "medical"}, ensure_ascii=True))
         turns.append(0)
 
     return {
