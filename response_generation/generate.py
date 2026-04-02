@@ -15,6 +15,26 @@ def has_saved_response(response):
     """Return True when a saved response contains non-whitespace text."""
     return isinstance(response, str) and bool(response.strip())
 
+
+def upsert_column(dataset, name, values):
+    """Replace a dataset column if it exists, otherwise add it."""
+    if name in dataset.column_names:
+        dataset = dataset.remove_columns(name)
+    return dataset.add_column(name, values)
+
+
+def drop_columns_if_present(dataset, names):
+    existing = [name for name in names if name in dataset.column_names]
+    if existing:
+        dataset = dataset.remove_columns(existing)
+    return dataset
+
+
+def get_dataset_value(dataset, column_name, idx, default=None):
+    if column_name not in dataset.column_names:
+        return default
+    return dataset[column_name][idx]
+
 def parse_thinking(content):
     """Split a <think>...</think> block from the final answer.
 
@@ -61,6 +81,76 @@ def sanitize_messages(messages):
         sanitized.append(clean_msg)
     return sanitized
 
+
+def serialize_stop_reason(stop_reason):
+    """Normalize backend-specific stop reasons into a string column."""
+    if stop_reason is None:
+        return ""
+    if isinstance(stop_reason, str):
+        return stop_reason
+    return json.dumps(stop_reason, ensure_ascii=False)
+
+
+def extract_usage_metadata(response):
+    """Extract token usage fields when the backend provides them."""
+    usage = getattr(response, "usage", None)
+    completion_details = getattr(usage, "completion_tokens_details", None)
+    prompt_details = getattr(usage, "prompt_tokens_details", None)
+    return {
+        "prompt_tokens": getattr(usage, "prompt_tokens", None),
+        "completion_tokens": getattr(usage, "completion_tokens", None),
+        "total_tokens": getattr(usage, "total_tokens", None),
+        "reasoning_tokens": getattr(completion_details, "reasoning_tokens", None),
+        "cached_prompt_tokens": getattr(prompt_details, "cached_tokens", None),
+    }
+
+
+def merge_dict(defaults, value):
+    merged = dict(defaults)
+    if isinstance(value, dict):
+        merged.update({k: v for k, v in value.items() if v is not None})
+        return merged
+    if isinstance(value, str) and value.strip():
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return merged
+        if isinstance(parsed, dict):
+            merged.update({k: v for k, v in parsed.items() if v is not None})
+    return merged
+
+
+def build_generation_meta(*, model, temperature, max_length, value=None):
+    return merge_dict({
+        "model": model,
+        "temperature": temperature,
+        "max_length": max_length,
+    }, value)
+
+
+def build_generation_info(
+    *,
+    value=None,
+    finish_reason="",
+    stop_reason="",
+    generation_error="",
+    prompt_tokens=None,
+    completion_tokens=None,
+    total_tokens=None,
+    reasoning_tokens=None,
+    cached_prompt_tokens=None,
+):
+    return merge_dict({
+        "finish_reason": finish_reason,
+        "stop_reason": stop_reason,
+        "generation_error": generation_error,
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "total_tokens": total_tokens,
+        "reasoning_tokens": reasoning_tokens,
+        "cached_prompt_tokens": cached_prompt_tokens,
+    }, value)
+
 async def writer_task(queue, filepath):
     """Listens to the queue and writes outputs to the JSONL file immediately."""
     with open(filepath, "a", encoding="utf-8") as f:
@@ -75,6 +165,16 @@ async def writer_task(queue, filepath):
 async def get_response(idx, prompt, client, model, max_length, temperature, semaphore, queue):
     """Fetches the response and immediately puts it in the write queue."""
     async with semaphore:
+        finish_reason = ""
+        stop_reason = ""
+        usage_metadata = {
+            "prompt_tokens": None,
+            "completion_tokens": None,
+            "total_tokens": None,
+            "reasoning_tokens": None,
+            "cached_prompt_tokens": None,
+        }
+        generation_error = ""
         try:
             # Sanitize messages to avoid Mistral tokenizer tool_calls issues
             prompt = sanitize_messages(prompt)
@@ -87,15 +187,20 @@ async def get_response(idx, prompt, client, model, max_length, temperature, sema
             )
             
             res = await client.chat.completions.create(**kwargs)
-            message = res.choices[0].message
+            choice = res.choices[0]
+            message = choice.message
             content = message.content or ""
             # SGLang/vLLM separate thinking into reasoning_content for
             # thinking models (e.g. Qwen3.5, QwQ). Read it if available.
             reasoning_content = getattr(message, "reasoning_content", None) or ""
+            finish_reason = getattr(choice, "finish_reason", "") or ""
+            stop_reason = serialize_stop_reason(getattr(choice, "stop_reason", None))
+            usage_metadata = extract_usage_metadata(res)
         except Exception as e:
             print(f"Error for index {idx}: {e}")
             content = ""
             reasoning_content = ""
+            generation_error = str(e)
 
         thinking, answer = parse_thinking(content)
         # Prefer the framework-separated reasoning over inline parsing
@@ -105,6 +210,17 @@ async def get_response(idx, prompt, client, model, max_length, temperature, sema
             "index": idx,
             "thinking": thinking,
             "answer": answer,
+            "generation_meta": build_generation_meta(
+                model=model,
+                temperature=temperature,
+                max_length=max_length,
+            ),
+            "generation_info": build_generation_info(
+                finish_reason=finish_reason,
+                stop_reason=stop_reason,
+                generation_error=generation_error,
+                **usage_metadata,
+            ),
         })
 
 async def main(args):
@@ -243,6 +359,29 @@ async def main(args):
         final_thinking = list(dataset["thinking"])
     else:
         final_thinking = [""] * len(dataset)
+    final_generation_meta = [
+        build_generation_meta(
+            model=get_dataset_value(dataset, "generation_model", idx, args.model) or args.model,
+            temperature=args.temperature,
+            max_length=args.max_length,
+            value=get_dataset_value(dataset, "generation_meta", idx),
+        )
+        for idx in range(len(dataset))
+    ]
+    final_generation_info = [
+        build_generation_info(
+            value=get_dataset_value(dataset, "generation_info", idx),
+            finish_reason=get_dataset_value(dataset, "finish_reason", idx, "") or "",
+            stop_reason=get_dataset_value(dataset, "stop_reason", idx, "") or "",
+            generation_error=get_dataset_value(dataset, "generation_error", idx, "") or "",
+            prompt_tokens=get_dataset_value(dataset, "prompt_tokens", idx),
+            completion_tokens=get_dataset_value(dataset, "completion_tokens", idx),
+            total_tokens=get_dataset_value(dataset, "total_tokens", idx),
+            reasoning_tokens=get_dataset_value(dataset, "reasoning_tokens", idx),
+            cached_prompt_tokens=get_dataset_value(dataset, "cached_prompt_tokens", idx),
+        )
+        for idx in range(len(dataset))
+    ]
 
     with open(output_jsonl, "r", encoding="utf-8") as f:
         for line in f:
@@ -250,26 +389,39 @@ async def main(args):
                 data = json.loads(line)
                 final_answers[data["index"]] = data.get("answer", "")
                 final_thinking[data["index"]] = data.get("thinking", "")
+                final_generation_meta[data["index"]] = build_generation_meta(
+                    model=args.model,
+                    temperature=args.temperature,
+                    max_length=args.max_length,
+                    value=data.get("generation_meta"),
+                )
+                final_generation_info[data["index"]] = build_generation_info(
+                    value=data.get("generation_info"),
+                    finish_reason=data.get("finish_reason", "") or "",
+                    stop_reason=data.get("stop_reason", "") or "",
+                    generation_error=data.get("generation_error", "") or "",
+                    prompt_tokens=data.get("prompt_tokens"),
+                    completion_tokens=data.get("completion_tokens"),
+                    total_tokens=data.get("total_tokens"),
+                    reasoning_tokens=data.get("reasoning_tokens"),
+                    cached_prompt_tokens=data.get("cached_prompt_tokens"),
+                )
 
-    if "answer" in dataset.column_names:
-        dataset = dataset.remove_columns("answer")
-    dataset = dataset.add_column("answer", final_answers)
-
-    if "thinking" in dataset.column_names:
-        dataset = dataset.remove_columns("thinking")
-    dataset = dataset.add_column("thinking", final_thinking)
-
-    if "generation_model" in dataset.column_names:
-        dataset = dataset.remove_columns("generation_model")
-    dataset = dataset.add_column("generation_model", [args.model] * len(dataset))
-
-    generation_meta = json.dumps({
-        "temperature": args.temperature,
-        "max_length": args.max_length,
-    })
-    if "generation_meta" in dataset.column_names:
-        dataset = dataset.remove_columns("generation_meta")
-    dataset = dataset.add_column("generation_meta", [generation_meta] * len(dataset))
+    dataset = upsert_column(dataset, "answer", final_answers)
+    dataset = upsert_column(dataset, "thinking", final_thinking)
+    dataset = upsert_column(dataset, "generation_meta", final_generation_meta)
+    dataset = upsert_column(dataset, "generation_info", final_generation_info)
+    dataset = drop_columns_if_present(dataset, [
+        "finish_reason",
+        "stop_reason",
+        "generation_error",
+        "prompt_tokens",
+        "completion_tokens",
+        "total_tokens",
+        "reasoning_tokens",
+        "cached_prompt_tokens",
+        "generation_model",
+    ])
 
     dataset.save_to_disk(args.output_dir)
 
