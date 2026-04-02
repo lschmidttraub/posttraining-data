@@ -6,7 +6,8 @@ JOBS=(
   # "Qwen/Qwen3-32B 1 1 1 4 1 false sglang false"
   # "${SCRATCH}/models/Qwen_Qwen3.5-397B-A17B 32 8 4 1 16 true vllm false"
   # "${SCRATCH}/models/zai-org_GLM-5 32 4 8 1 32 true sglang true"
-  "${SCRATCH}/models/zai-org_GLM-5-FP8 4 1 4 1 16 true sglang true"
+  # "${SCRATCH}/models/zai-org_GLM-5-FP8 4 1 4 1 16 true sglang true"
+  "${SCRATCH}/models/zai-org_GLM-5-FP8 16 4 4 1 16 true sglang true"
 )
 
 CATEGORY="${CATEGORY:-}"
