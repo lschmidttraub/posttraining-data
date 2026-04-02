@@ -30,7 +30,7 @@ def normalize_prompt(prompt: object) -> str:
         return str(prompt)
 
 
-def deduplicate_by_prompt(dataset: Dataset, desc: str) -> Dataset:
+def deduplicate_by_prompt(dataset: Dataset, desc: str, force_reprocess: bool = False) -> Dataset:
     seen_prompts: set[str] = set()
 
     def keep_first_prompt(sample: dict[str, object]) -> bool:
@@ -41,7 +41,11 @@ def deduplicate_by_prompt(dataset: Dataset, desc: str) -> Dataset:
         return True
 
     original_size = len(dataset)
-    deduplicated = dataset.filter(keep_first_prompt, desc=desc)
+    deduplicated = dataset.filter(
+        keep_first_prompt,
+        desc=desc,
+        load_from_cache_file=not force_reprocess,
+    )
     removed = original_size - len(deduplicated)
     print(f"{desc}: removed {removed} duplicate prompts, kept {len(deduplicated)} rows")
     return deduplicated
@@ -90,6 +94,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", required=True, help="Directory where the processed dataset will be saved")
     parser.add_argument("--batch-size", type=int, default=1000, help="Batch size for dataset.map")
     parser.add_argument("--num-proc", type=int, default=None, help="Optional number of worker processes for dataset.map")
+    parser.add_argument(
+        "--force-reprocess",
+        action="store_true",
+        help="Force preprocessing to rerun instead of reusing Hugging Face dataset.map/filter cache files.",
+    )
     parser.add_argument("--upload-to-hub", action="store_true", help="Upload the processed dataset to the Hugging Face Hub")
     parser.add_argument("--hub-dataset-id", default=None, help="Target Hugging Face dataset repo, e.g. org/name")
     parser.add_argument("--hub-private", action="store_true", help="Create or update the Hub dataset as private")
@@ -117,13 +126,18 @@ def main() -> None:
                 with_indices=True,
                 batch_size=args.batch_size,
                 num_proc=args.num_proc,
+                load_from_cache_file=not args.force_reprocess,
                 remove_columns=split_dataset.column_names,
                 desc=f"Preprocessing {dataset_name}:{split_name}",
             ).select_columns(STANDARD_COLUMNS)
             all_processed.append(processed_split)
 
     combined = all_processed[0] if len(all_processed) == 1 else concatenate_datasets(all_processed)
-    train_split = deduplicate_by_prompt(combined, desc="Deduplicating prompt rows")
+    train_split = deduplicate_by_prompt(
+        combined,
+        desc="Deduplicating prompt rows",
+        force_reprocess=args.force_reprocess,
+    )
     processed = DatasetDict({"train": train_split})
 
     os.makedirs(args.output_dir, exist_ok=True)
