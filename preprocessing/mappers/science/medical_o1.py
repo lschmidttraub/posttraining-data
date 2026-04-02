@@ -53,7 +53,7 @@ def map_medical_o1(
         )
         data_sources.append(DATA_SOURCE)
         data_source_ids.append(str(row_idx))
-        meta_information.append(json.dumps({"subject": "medical"}, ensure_ascii=True))
+        meta_information.append(json.dumps({"subject": "medicine"}, ensure_ascii=True))
         turns.append(0)
 
     return {
