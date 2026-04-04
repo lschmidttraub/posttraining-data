@@ -30,6 +30,7 @@ fi
 
 BASE_OUTPUT_DIR="${BASE_OUTPUT_DIR:-$SCRATCH/datasets/completions/$DATASET_NAME}"
 MAX_LENGTH="${MAX_LENGTH:-8096}"
+CONCURRENT="${CONCURRENT:-1000}"
 JOB_TIME="12:00:00"
 SPLIT="train"
 
@@ -76,6 +77,7 @@ srun --environment="./response_generation/env/alignment.toml" --container-writab
     --account ${ACCOUNT} \\
     --split '${SPLIT}' \\
     --max-length ${MAX_LENGTH} \\
+    --concurrent ${CONCURRENT} \\
     ${OCF_FLAG} --enforce-eager ${GLM_FLAG}"
 EOF
 done

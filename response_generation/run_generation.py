@@ -68,6 +68,7 @@ def main():
     parser.add_argument("--preprocess-num-proc", type=int, default=None, help="Optional number of preprocessing worker processes")
 
     parser.add_argument("--max-length", type=int, default=8096, help="Max output tokens per response")
+    parser.add_argument("--concurrent", type=int, default=2000, help="Maximum in-flight generation requests")
 
 
     args = parser.parse_args()
@@ -214,6 +215,7 @@ def main():
         "--model", args.model,
         "--base-url", base_url,
         "--max-length", str(args.max_length),
+        "--concurrent", str(args.concurrent),
         "--retry-existing",
     ]
     if args.remove_last_message:
