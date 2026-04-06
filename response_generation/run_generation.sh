@@ -8,7 +8,7 @@ JOBS=(
   # "${SCRATCH}/models/zai-org_GLM-5 32 4 8 1 32 true sglang true"
   # "${SCRATCH}/models/zai-org_GLM-5-FP8 4 1 4 1 16 true sglang true"
   # "${SCRATCH}/models/zai-org_GLM-5-FP8 16 4 4 1 16 true sglang true"
-  "${SCRATCH}/models/zai-org_GLM-5-FP8 20 4 4 1 20 true sglang true"
+  "${SCRATCH}/models/zai-org_GLM-5-FP8 20 4 5 1 20 true sglang true"
 )
 
 CATEGORY="${CATEGORY:-}"
