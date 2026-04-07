@@ -111,7 +111,7 @@ def main():
             if args.glm:
                 fw_args += " --tool-call-parser glm47 --reasoning-parser glm45"
                 fw_args += " --speculative-algorithm EAGLE --speculative-num-steps 3 --speculative-eagle-topk 1 --speculative-num-draft-tokens 4"
-                fw_args += " --mem-fraction-static 0.85 --disable-cuda-graph"
+                fw_args += " --mem-fraction-static 0.88 --schedule-conservativeness 1.3 --disable-cuda-graph"
         elif args.framework == "vllm":
             fw_args = f"--model {args.model} --host 0.0.0.0 --port 8080 --served-model-name {args.model} --data-parallel-size {args.dp_size} --tensor-parallel-size {args.tp_size} --trust-remote-code"
             if args.enforce_eager:

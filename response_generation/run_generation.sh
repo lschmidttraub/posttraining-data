@@ -8,8 +8,7 @@ JOBS=(
   # GLM-5 uses 64 attention heads, so tp-size must divide 64.
   # "${SCRATCH}/models/zai-org_GLM-5 32 4 8 1 32 true sglang true"
   # "${SCRATCH}/models/zai-org_GLM-5-FP8 4 1 4 1 16 true sglang true"
-  # "${SCRATCH}/models/zai-org_GLM-5-FP8 16 4 4 1 16 true sglang true"
-  "${SCRATCH}/models/zai-org_GLM-5-FP8 16 2 8 1 32 true sglang true"
+  "${SCRATCH}/models/zai-org_GLM-5-FP8 16 4 4 1 16 true sglang true"
 )
 
 CATEGORY="${CATEGORY:-}"
