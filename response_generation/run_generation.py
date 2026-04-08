@@ -144,7 +144,7 @@ def main():
             submit_cmd.append("--disable-ocf")
         
         if args.framework == "sglang":
-            fw_args = f"--model-path {args.model} --host 0.0.0.0 --port 8080 --served-model-name {args.model} --dp-size {args.dp_size} --tp-size {args.tp_size} --trust-remote-code"
+            fw_args = f"--model-path {args.model} --host 0.0.0.0 --port 8080 --served-model-name {args.model} --dp-size {args.dp_size} --tp-size {args.tp_size} --trust-remote-code --enable-metrics"
             if args.glm:
                 fw_args += " --tool-call-parser glm47 --reasoning-parser glm45"
                 fw_args += " --speculative-algorithm EAGLE --speculative-num-steps 3 --speculative-eagle-topk 1 --speculative-num-draft-tokens 4"
@@ -193,6 +193,7 @@ def main():
     submit_dir = os.environ.get("SLURM_SUBMIT_DIR", os.getcwd())
     server_log = os.path.join(submit_dir, "logs", job_id, "log.out") if job_id else None
     base_url = args.base_url
+    worker_urls = []
     target_prefix = "Router URL: " if args.workers > 1 else "All worker URLs: "
 
     while not base_url:
@@ -212,7 +213,8 @@ def main():
                     if line.startswith(target_prefix):
                         raw = line.split(target_prefix)[1].strip()
                         base_url = f"{raw}/v1" if args.workers > 1 else f"{raw.rsplit(':', 1)[0]}:8080/v1"
-                        break
+                    if line.startswith("All worker URLs: "):
+                        worker_urls = line.split("All worker URLs: ")[1].strip().split()
             if base_url:
                 break
         time.sleep(5)
@@ -257,6 +259,7 @@ def main():
         time.sleep(probe_delay)
         probe_delay = min(probe_delay * 2, 60)
 
+    print(f"📊 Extracted worker URLs: {worker_urls}")
     output_dir = os.path.join(args.base_output_dir, model_short)
     generate_args = [
         "python", "-u", "response_generation/generate.py",
@@ -268,6 +271,8 @@ def main():
         "--base-url", base_url,
         "--retry-existing",
     ]
+    if worker_urls:
+        generate_args.extend(["--worker-urls"] + worker_urls)
     if args.remove_last_message:
         generate_args.append("--remove-last-message")
     gen_cmd = [

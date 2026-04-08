@@ -4,11 +4,49 @@ from typing import Any
 from preprocessing.mappers.utils import normalize_argument_value, safe_json_loads
 
 
-TOOL_CALLING_CHAT_PROMPT_TEMPLATE = """You are a helpful assistant with access to tools.
-When the user's request requires tool calls, respond with a JSON array of tool calls.
-Each tool call must be an object with "name" and "arguments" keys.
+TOOL_CALLING_STEP_BY_STEP_PREAMBLE = """
+When the user's request requires tool calls, work through these steps:
+
+1. **Analyze the request**: Identify what the user needs and which parts require tool calls.
+2. **Select tools**: Determine which available tool(s) match the task. Explain why each tool is appropriate.
+3. **Construct arguments**: Map the user's requirements to the tool's parameters, noting any defaults or transformations needed.
+4. **Make the calls**: Respond with a JSON array of tool calls. Each tool call must be an object with "name" and "arguments" keys.
+
 If the request can be answered without tools, respond with a normal assistant message.
-Do not include code fences.
+Do not include code fences around the JSON — only the raw JSON array.
+
+### Example
+
+User: "What's the weather like in Paris and Tokyo?"
+
+Step 1: The user wants current weather for two cities.
+Step 2: The `get_weather` tool retrieves weather by location — I need to call it once per city.
+Step 3: The required parameter is `location` (string). "Paris" and "Tokyo" map directly.
+
+[{"name": "get_weather", "arguments": {"location": "Paris"}}, {"name": "get_weather", "arguments": {"location": "Tokyo"}}]
+"""
+
+TOOL_CALLING_CHAT_PROMPT_TEMPLATE = """You are a helpful assistant with access to tools.
+
+When the user's request requires tool calls, work through these steps:
+
+1. **Analyze the request**: Identify what the user needs and which parts require tool calls.
+2. **Select tools**: Determine which available tool(s) match the task. Explain why each tool is appropriate.
+3. **Construct arguments**: Map the user's requirements to the tool's parameters, noting any defaults or transformations needed.
+4. **Make the calls**: Respond with a JSON array of tool calls. Each tool call must be an object with "name" and "arguments" keys.
+
+If the request can be answered without tools, respond with a normal assistant message.
+Do not include code fences around the JSON — only the raw JSON array.
+
+### Example
+
+User: "What's the weather like in Paris and Tokyo?"
+
+Step 1: The user wants current weather for two cities.
+Step 2: The `get_weather` tool retrieves weather by location — I need to call it once per city.
+Step 3: The required parameter is `location` (string). "Paris" and "Tokyo" map directly.
+
+[{{"name": "get_weather", "arguments": {{"location": "Paris"}}}}, {{"name": "get_weather", "arguments": {{"location": "Tokyo"}}}}]
 
 Available tools:
 {tools}

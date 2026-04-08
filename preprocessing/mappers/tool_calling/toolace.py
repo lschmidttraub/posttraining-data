@@ -1,7 +1,7 @@
 import json
 from typing import Any
 
-from preprocessing.mappers.tool_calling.common import stringify_content
+from preprocessing.mappers.tool_calling.common import TOOL_CALLING_STEP_BY_STEP_PREAMBLE, stringify_content
 from preprocessing.mappers.utils import safe_json_loads
 
 
@@ -53,7 +53,8 @@ def map_toolace(batch: dict[str, list[Any]], indices: list[int]) -> dict[str, li
             if normalized_message["role"] == "assistant":
                 prompt_messages = list(history)
                 if system_prompt:
-                    prompt_messages = [{"role": "system", "content": system_prompt}, *prompt_messages]
+                    augmented_system = system_prompt.rstrip() + "\n" + TOOL_CALLING_STEP_BY_STEP_PREAMBLE
+                    prompt_messages = [{"role": "system", "content": augmented_system}, *prompt_messages]
 
                 prompts.append(prompt_messages)
                 references.append(normalized_message["content"])

@@ -1,6 +1,6 @@
 from typing import Any, Callable
 
-from datasets import DatasetDict
+from datasets import DatasetDict, load_dataset
 
 from preprocessing.mappers.math_and_coding.big_math_rl import load_big_math_rl, map_big_math_rl
 from preprocessing.mappers.math_and_coding.dapo_math import load_dapo_math, map_dapo_math
@@ -15,7 +15,16 @@ from preprocessing.mappers.science.multi_subject_rlvr import map_multi_subject_r
 from preprocessing.mappers.science.natural_reasoning import map_natural_reasoning
 from preprocessing.mappers.science.nemotron_science import map_nemotron_science
 from preprocessing.mappers.science.textbook_reasoning import map_textbook_reasoning
+from preprocessing.mappers.tool_calling.nemotron_rl_agentic_conversational_tool_use_pivot import map_nemotron_rl_agentic_conversational_tool_use_pivot
+from preprocessing.mappers.tool_calling.toolace import map_toolace
+from preprocessing.mappers.tool_calling.when2call import map_when2call_train_sft
 from preprocessing.mappers.tool_calling.xlam_function_calling import map_xlam_function_calling
+
+def load_when2call() -> DatasetDict:
+    return DatasetDict({"train": load_dataset("nvidia/When2Call", "train_sft", split="train")})
+
+def load_nemotron_agentic() -> DatasetDict:
+    return load_dataset("nvidia/Nemotron-RL-Agentic-Conversational-Tool-Use-Pivot-v1", trust_remote_code=True)
 
 
 MapperFn = Callable[[dict[str, list[Any]], list[int]], dict[str, list[Any]]]
@@ -24,6 +33,9 @@ MapperFn = Callable[[dict[str, list[Any]], list[int]], dict[str, list[Any]]]
 TOOL_CALLING_MAPPERS: dict[str, MapperFn] = {
     "MadeAgents/xlam-irrelevance-7.5k": map_xlam_function_calling,
     "Salesforce/xlam-function-calling-60k": map_xlam_function_calling,
+    "Team-ACE/ToolACE": map_toolace,
+    "nvidia/When2Call": map_when2call_train_sft,
+    "nvidia/Nemotron-RL-Agentic-Conversational-Tool-Use-Pivot-v1": map_nemotron_rl_agentic_conversational_tool_use_pivot,
 }
 
 MATH_MAPPERS: dict[str, MapperFn] = {
@@ -70,4 +82,6 @@ DATASET_LOADERS: dict[str, Callable[[], DatasetDict]] = {
     "nvidia/OpenCodeReasoning-2": load_ocr2,
     "nvidia/Nemotron-Cascade-SFT-Stage-1": load_nemotron_cascade_code,
     "nvidia/Nemotron-Competitive-Programming-v1": load_nemotron_cp,
+    "nvidia/When2Call": load_when2call,
+    "nvidia/Nemotron-RL-Agentic-Conversational-Tool-Use-Pivot-v1": load_nemotron_agentic,
 }

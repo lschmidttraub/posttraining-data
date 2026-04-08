@@ -5,7 +5,9 @@ JOBS=(
   # "Qwen/Qwen3-8B 1 1 1 4 1 false sglang false"
   # "Qwen/Qwen3-32B 1 1 1 4 1 false sglang false"
   # "${SCRATCH}/models/Qwen_Qwen3.5-397B-A17B 32 8 4 1 16 true vllm false"
-  "${SCRATCH}/models/zai-org_GLM-5 32 4 8 1 32 true sglang true"
+  # "${SCRATCH}/models/zai-org_GLM-5 32 4 8 1 32 true sglang true"
+  "${SCRATCH}/models/zai-org_GLM-5-FP8 32 8 4 1 16 true sglang true"
+  # "$SCRATCH/models/nvidia_GLM-5-NVFP4 8 4 2 1 8 true sglang true"
 )
 
 CATEGORY="${CATEGORY:-}"
@@ -27,7 +29,7 @@ else
 fi
 
 BASE_OUTPUT_DIR="${BASE_OUTPUT_DIR:-$SCRATCH/datasets/completions/$DATASET_NAME}"
-JOB_TIME="12:00:00"
+JOB_TIME="${JOB_TIME:-6:00:00}"
 SPLIT="train"
 
 ACCOUNT="infra01"
@@ -49,7 +51,7 @@ for ENTRY in "${JOBS[@]}"; do
 
   sbatch <<EOF
 #!/bin/bash
-#SBATCH --job-name=gen_${SAFE_MODEL_NAME}
+#SBATCH --job-name=$(basename $INPUT_DATASET)
 #SBATCH --account=${ACCOUNT}
 #SBATCH --output=${LOGS_DIR}/client/${SAFE_MODEL_NAME}_%j.log
 #SBATCH --time=${JOB_TIME}
@@ -77,24 +79,6 @@ uv run python -u response_generation/run_generation.py \\
     --client-hetgroup 0 \\
     --server-hetgroup 1 \\
     ${OCF_FLAG} --enforce-eager ${GLM_FLAG}
-
-# srun --overlap --het-group=0 --environment="./response_generation/env/alignment.toml" --container-writable --container-workdir="$PWD" \\
-#     bash -c "unset SSL_CERT_FILE && python -u response_generation/run_generation.py \\
-#     ${DATASET_FLAGS_STRING} \\
-#     --base-output-dir '${BASE_OUTPUT_DIR}' \\
-#     --logs-dir '${LOGS_DIR}/server' \\
-#     --model '${MODEL}' \\
-#     --slurm-nodes ${NNODES} \\
-#     --hetgroup 1 \\
-#     --workers ${WORKERS} \\
-#     --nodes-per-worker ${NPW} \\
-#     --dp-size ${DP} \\
-#     --tp-size ${TP} \\
-#     --framework '${FRAMEWORK}' \\
-#     --job-time '${JOB_TIME}' \\
-#     --account ${ACCOUNT} \\
-#     --split '${SPLIT}' \\
-#     ${OCF_FLAG} --enforce-eager ${GLM_FLAG}"
 
 EOF
 done

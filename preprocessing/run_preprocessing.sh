@@ -10,13 +10,13 @@ OUTPUT_DIR="${OUTPUT_DIR:-${SCRATCH}/datasets/preprocessed/${CATEGORY}${NAME:+/$
 BATCH_SIZE="${BATCH_SIZE:-1000}"
 NUM_PROC="${NUM_PROC:-}"
 
-# HF upload 
+# HF upload
 UPLOAD_TO_HUB="${UPLOAD_TO_HUB:-0}"
 HUB_DATASET_ID="${HUB_DATASET_ID:-}"
 HUB_PRIVATE="${HUB_PRIVATE:-1}"
 
 # SLURM job parameters
-JOB_TIME="${JOB_TIME:-12:00:00}"
+JOB_TIME="${JOB_TIME:-1:00:00}"
 ACCOUNT="${ACCOUNT:-infra01}"
 LOGS_DIR="${LOGS_DIR:-./logs/preprocessing}"
 JOB_NAME="${JOB_NAME:-prep_${CATEGORY}}"
@@ -65,7 +65,7 @@ sbatch <<EOF
 #SBATCH --nodes=1
 #SBATCH --mail-type=END,FAIL
 
-srun --environment="./response_generation/env/alignment.toml" --container-writable --container-workdir="$PWD" \\
+srun --environment="./preprocessing/env/preprocessing.toml" --container-writable --container-workdir="$PWD" \\
     bash -c "unset SSL_CERT_FILE && python -u -m preprocessing.run \\
     ${CLI_ARGS_STRING} \\
     ${NUM_PROC_FLAG} \\

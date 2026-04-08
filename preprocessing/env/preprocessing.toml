@@ -1,0 +1,22 @@
+image = "/capstor/store/cscs/swissai/a156/container-images/preprocessing.sqsh"
+
+
+mounts = [
+  "/iopsstor",
+  "/users",
+  "/capstor"
+]
+
+# The initial directory in the container.
+workdir = "/users"
+writable = true
+
+[env]
+FI_CXI_DISABLE_HOST_REGISTER = "1"
+FI_MR_CACHE_MONITOR = "userfaultfd"
+NCCL_DEBUG = "INFO"
+
+
+[annotations]
+com.hooks.aws_ofi_nccl.enabled = "true"
+com.hooks.aws_ofi_nccl.variant = "cuda13"
