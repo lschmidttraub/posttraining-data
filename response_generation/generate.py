@@ -75,15 +75,17 @@ async def writer_task(queue, filepath):
             queue.task_done()
 
 
-async def get_response(idx, prompt, client, model, max_length, temperature, semaphore, queue, max_retries=3):
+async def get_response(idx, prompt, client, model, max_length, temperature, semaphore, queue, max_retries=3, prefix=""):
     """Fetches the response and immediately puts it in the write queue.
 
-    If the response is truncated (finish_reason='length'), the answer is
-    left empty so a second pass with a larger max_length can retry it.
+    If the response is truncated (finish_reason='length'), the partial
+    output is saved so a second pass can continue from where it left off.
     Retries transient errors up to *max_retries* times.
     """
     async with semaphore:
         prompt = sanitize_messages(prompt)
+        if prefix:
+            prompt.append({"role": "assistant", "content": prefix})
         kwargs = dict(
             model=model,
             messages=prompt,
@@ -93,6 +95,7 @@ async def get_response(idx, prompt, client, model, max_length, temperature, sema
 
         thinking, answer = "", ""
         truncated = False
+        partial_content = ""
         for attempt in range(1, max_retries + 1):
             t0 = time.monotonic()
             try:
@@ -114,15 +117,26 @@ async def get_response(idx, prompt, client, model, max_length, temperature, sema
                     continue
                 break
 
-            thinking, answer = parse_thinking(content)
-            # Prefer the framework-separated reasoning over inline parsing
-            if reasoning_content:
-                thinking = reasoning_content.strip()
+            # Combine with prefix when continuing from a partial response
+            if prefix:
+                full_content = prefix + content
+            elif reasoning_content:
+                # Reconstruct full text from framework-separated fields
+                if content:
+                    full_content = f"<think>\n{reasoning_content}\n</think>\n{content}"
+                else:
+                    # Truncated during thinking — no closing tag
+                    full_content = f"<think>\n{reasoning_content}"
+            else:
+                full_content = content
+
+            thinking, answer = parse_thinking(full_content)
 
             if finish_reason == "length":
-                # Hit max_tokens — leave answer empty so a second pass can
-                # retry with a larger max_length.
+                # Hit max_tokens — save partial output so a second pass
+                # can continue from where this attempt left off.
                 truncated = True
+                partial_content = full_content
                 answer = ""
                 break
 
@@ -137,21 +151,25 @@ async def get_response(idx, prompt, client, model, max_length, temperature, sema
         elif not answer:
             print(f"⚠️  index {idx}: answer still empty after {max_retries} attempt(s).")
 
-        await queue.put({
+        result = {
             "index": idx,
             "thinking": thinking,
             "answer": answer,
-        })
+        }
+        if truncated:
+            result["partial_content"] = partial_content
+        await queue.put(result)
 
 
 async def run_pass(label, indices, all_prompts, next_client, args, max_length,
-                   queue, semaphore):
+                   queue, semaphore, prefixes=None):
     """Run one generation pass over a list of indices."""
     print(f"🚀 {label}: Processing {len(indices)} prompts (max_length={max_length})...")
     tasks = [
         get_response(idx, all_prompts[idx], next_client(), args.model,
                      max_length, args.temperature, semaphore, queue,
-                     args.max_retries)
+                     args.max_retries,
+                     prefix=(prefixes or {}).get(idx, ""))
         for idx in indices
     ]
     for f in tqdm_asyncio.as_completed(tasks, total=len(tasks)):
@@ -285,14 +303,18 @@ async def main(args):
     await writer
 
     # 7. Second pass on anything that came back empty (truncated) —
-    # retry with the extended max length.
+    # continue from the partial output with the extended max length.
     empty_indices = []
+    partials = {}
     with open(output_jsonl, "r", encoding="utf-8") as f:
         for line in f:
             if line.strip():
                 data = json.loads(line)
                 if not has_saved_response(data.get("answer", "")):
-                    empty_indices.append(data["index"])
+                    idx = data["index"]
+                    empty_indices.append(idx)
+                    if data.get("partial_content"):
+                        partials[idx] = data["partial_content"]
     # Deduplicate while preserving the most recent status
     empty_indices = sorted(set(empty_indices))
 
@@ -300,7 +322,8 @@ async def main(args):
         queue = asyncio.Queue()
         writer = asyncio.create_task(writer_task(queue, output_jsonl))
         await run_pass("Second pass", empty_indices, all_prompts, next_client,
-                       args, args.extended_max_length, queue, semaphore)
+                       args, args.extended_max_length, queue, semaphore,
+                       prefixes=partials)
         await queue.put(None)
         await writer
 
@@ -368,7 +391,7 @@ if __name__ == "__main__":
     parser.add_argument("--output-dir", type=str, required=True)
     parser.add_argument("--model", type=str, required=True)
     parser.add_argument("--max-tokens", type=int, default=None)
-    parser.add_argument("--max-length", type=int, default=8192, help="Max generation tokens for the first pass")
+    parser.add_argument("--max-length", type=int, default=12288, help="Max generation tokens for the first pass")
     parser.add_argument("--extended-max-length", type=int, default=16384, help="Max generation tokens for the second pass (retries truncated first-pass responses)")
     parser.add_argument("--split", type=str, default="train")
 

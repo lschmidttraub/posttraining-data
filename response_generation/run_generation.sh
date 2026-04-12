@@ -6,12 +6,12 @@ JOBS=(
   # "Qwen/Qwen3-32B 1 1 1 4 1 false sglang false"
   # "${SCRATCH}/models/Qwen_Qwen3.5-397B-A17B 32 8 4 1 16 true vllm false"
   # "${SCRATCH}/models/zai-org_GLM-5 32 4 8 1 32 true sglang true"
-  "${SCRATCH}/models/zai-org_GLM-5-FP8 4 1 4 1 16 true sglang true"
+  "${SCRATCH}/models/zai-org_GLM-5-FP8 32 8 4 1 16 true sglang true"
   # "$SCRATCH/models/nvidia_GLM-5-NVFP4 8 4 2 1 8 true sglang true"
 )
 
 CATEGORY="${CATEGORY:-}"
-INPUT_DATASET="${INPUT_DATASET:-$SCRATCH/datasets/chunked/science/science-chunk1}"
+INPUT_DATASET="${INPUT_DATASET:-$SCRATCH/datasets/chunked/math/math-chunk10}"
 
 # If category is set, we preprocess the category and use the result for generation
 if [ -n "${CATEGORY}" ]; then
@@ -29,7 +29,7 @@ else
 fi
 
 BASE_OUTPUT_DIR="${BASE_OUTPUT_DIR:-$SCRATCH/datasets/completions/$DATASET_NAME}"
-JOB_TIME="${JOB_TIME:-6:00:00}"
+JOB_TIME="${JOB_TIME:-10:00:00}"
 SPLIT="train"
 
 ACCOUNT="infra01"
