@@ -148,8 +148,7 @@ def main():
             if args.glm:
                 fw_args += " --tool-call-parser glm47 --reasoning-parser glm45"
                 fw_args += " --speculative-algorithm EAGLE --speculative-num-steps 3 --speculative-eagle-topk 1 --speculative-num-draft-tokens 4"
-                fw_args += " --mem-fraction-static 0.85 --disable-cuda-graph"
-                # fw_args += " --mem-fraction-static 0.85"
+                fw_args += " --mem-fraction-static 0.85"
         elif args.framework == "vllm":
             fw_args = f"--model {args.model} --host 0.0.0.0 --port 8080 --served-model-name {args.model} --data-parallel-size {args.dp_size} --tensor-parallel-size {args.tp_size} --trust-remote-code"
             if args.enforce_eager:
@@ -162,13 +161,13 @@ def main():
         submit_cmd.extend(["--framework-args", fw_args])
 
         pre_launch = args.pre_launch_cmds or ""
-        # if args.nodes_per_worker > 1:
-        #     # Workaround: on Slingshot/CXI, separate srun steps get isolated
-        #     # network credentials, so NCCL's OFI/CXI provider fails. Force
-        #     # NCCL to use TCP sockets for inter-node communication instead.
-        #     nccl_fix = "export NCCL_NET=Socket"
-        #     pre_launch = f"{nccl_fix}; {pre_launch}" if pre_launch else nccl_fix
-        
+        if args.glm:
+            # deep_gemm is installed in the GLM container but not imported
+            # unless SGLANG_ENABLE_JIT_DEEPGEMM is set. Without it, CUDA
+            # graph capture crashes with NameError in the NSA indexer.
+            deepgemm_fix = "unset SGL_ENABLE_JIT_DEEPGEMM; export SGLANG_ENABLE_JIT_DEEPGEMM=1"
+            pre_launch = f"{deepgemm_fix}; {pre_launch}" if pre_launch else deepgemm_fix
+
         if pre_launch:
             submit_cmd.extend(["--pre-launch-cmds", pre_launch])
 

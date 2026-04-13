@@ -11,7 +11,7 @@ JOBS=(
 )
 
 CATEGORY="${CATEGORY:-}"
-INPUT_DATASET="${INPUT_DATASET:-$SCRATCH/datasets/chunked/math/math-chunk10}"
+INPUT_DATASET="${INPUT_DATASET:-$SCRATCH/datasets/chunked/math/math-chunk11}"
 
 # If category is set, we preprocess the category and use the result for generation
 if [ -n "${CATEGORY}" ]; then
