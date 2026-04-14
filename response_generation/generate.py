@@ -304,28 +304,28 @@ async def main(args):
 
     # 7. Second pass on anything that came back empty (truncated) —
     # continue from the partial output with the extended max length.
-    empty_indices = []
-    partials = {}
-    with open(output_jsonl, "r", encoding="utf-8") as f:
-        for line in f:
-            if line.strip():
-                data = json.loads(line)
-                if not has_saved_response(data.get("answer", "")):
-                    idx = data["index"]
-                    empty_indices.append(idx)
-                    if data.get("partial_content"):
-                        partials[idx] = data["partial_content"]
-    # Deduplicate while preserving the most recent status
-    empty_indices = sorted(set(empty_indices))
-
-    if empty_indices:
-        queue = asyncio.Queue()
-        writer = asyncio.create_task(writer_task(queue, output_jsonl))
-        await run_pass("Second pass", empty_indices, all_prompts, next_client,
-                       args, args.extended_max_length, queue, semaphore,
-                       prefixes=partials)
-        await queue.put(None)
-        await writer
+    # empty_indices = []
+    # partials = {}
+    # with open(output_jsonl, "r", encoding="utf-8") as f:
+    #     for line in f:
+    #         if line.strip():
+    #             data = json.loads(line)
+    #             if not has_saved_response(data.get("answer", "")):
+    #                 idx = data["index"]
+    #                 empty_indices.append(idx)
+    #                 if data.get("partial_content"):
+    #                     partials[idx] = data["partial_content"]
+    # # Deduplicate while preserving the most recent status
+    # empty_indices = sorted(set(empty_indices))
+    #
+    # if empty_indices:
+    #     queue = asyncio.Queue()
+    #     writer = asyncio.create_task(writer_task(queue, output_jsonl))
+    #     await run_pass("Second pass", empty_indices, all_prompts, next_client,
+    #                    args, args.extended_max_length, queue, semaphore,
+    #                    prefixes=partials)
+    #     await queue.put(None)
+    #     await writer
 
     # Close all http clients properly
     for hc in http_clients:
@@ -391,7 +391,7 @@ if __name__ == "__main__":
     parser.add_argument("--output-dir", type=str, required=True)
     parser.add_argument("--model", type=str, required=True)
     parser.add_argument("--max-tokens", type=int, default=None)
-    parser.add_argument("--max-length", type=int, default=12288, help="Max generation tokens for the first pass")
+    parser.add_argument("--max-length", type=int, default=16384, help="Max generation tokens for the first pass")
     parser.add_argument("--extended-max-length", type=int, default=16384, help="Max generation tokens for the second pass (retries truncated first-pass responses)")
     parser.add_argument("--split", type=str, default="train")
 

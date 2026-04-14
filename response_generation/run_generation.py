@@ -165,7 +165,17 @@ def main():
             # deep_gemm is installed in the GLM container but not imported
             # unless SGLANG_ENABLE_JIT_DEEPGEMM is set. Without it, CUDA
             # graph capture crashes with NameError in the NSA indexer.
-            deepgemm_fix = "unset SGL_ENABLE_JIT_DEEPGEMM; export SGLANG_ENABLE_JIT_DEEPGEMM=1"
+            #
+            # Persist the DeepGEMM JIT cache on scratch so ephemeral
+            # containers don't re-compile kernels every launch (~13 min).
+            dg_cache = f"/capstor/store/cscs/swissai/a156/deep_gemm"
+            deepgemm_fix = (
+                "unset SGL_ENABLE_JIT_DEEPGEMM; export SGLANG_ENABLE_JIT_DEEPGEMM=1; "
+                f"export DG_JIT_CACHE_DIR={dg_cache}; "
+                f"export SGLANG_DG_CACHE_DIR={dg_cache}; "
+                f"export SGLANG_MOE_CONFIG_DIR=/capstor/store/cscs/swissai/a156/sglang-moe-configs/; "
+                f"mkdir -p {dg_cache}"
+            )
             pre_launch = f"{deepgemm_fix}; {pre_launch}" if pre_launch else deepgemm_fix
 
         if pre_launch:

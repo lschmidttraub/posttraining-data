@@ -11,7 +11,7 @@ JOBS=(
 )
 
 CATEGORY="${CATEGORY:-}"
-INPUT_DATASET="${INPUT_DATASET:-$SCRATCH/datasets/chunked/math/math-chunk11}"
+INPUT_DATASET="${INPUT_DATASET:-$SCRATCH/datasets/chunked/math/math-chunk18}"
 
 # If category is set, we preprocess the category and use the result for generation
 if [ -n "${CATEGORY}" ]; then
@@ -29,7 +29,7 @@ else
 fi
 
 BASE_OUTPUT_DIR="${BASE_OUTPUT_DIR:-$SCRATCH/datasets/completions/$DATASET_NAME}"
-JOB_TIME="${JOB_TIME:-10:00:00}"
+JOB_TIME="${JOB_TIME:-4:00:00}"
 SPLIT="train"
 
 ACCOUNT="infra01"
